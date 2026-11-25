@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#141414" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="WorkBuddy" />
+<link rel="icon" href="/icons/icon-192.png" />
+<title>WorkBuddy 远程</title>
+<style>
+  @font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/inter-400.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/fonts/inter-500.woff2') format('woff2')}
+  @font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/fonts/inter-600.woff2') format('woff2')}
+  /* 取色自官方 renderer：中性灰阶 + 蓝色 action */
+  :root{
+    --bg:#141414; --panel:#1a1a1a; --panel-2:#242424; --line:#2e2e2e;
+    --text:#ececec; --muted:#a3a3a3; --accent:#3b82f6; --ok:#34d399; --warn:#fbbf24;
+    --user:#242424; --think:#1e1e1e;
+    --hover:#2b2b2b; --code-bg:#1a1a1a; --code-inline:#242424;
+    --table-head:#232323; --table-td:#1b1b1b; --table-line:#2c2c2c;
+    --step-line:#22262c; --quote-line:#3a3a3a;
+    --del-line:#3a2a2e; --del-bg:#241a1d; --del-fg:#e08a92;
+    --scroll:#333333;
+  }
+  html[data-theme="light"] aside{background:#f6f7f9;border-right-color:#e6e6e6}
+  html[data-theme="light"] .top-sep{background:#d4d4d4}
+  html[data-theme="light"]{
+    --bg:#fbfbfb; --panel:#ffffff; --panel-2:#f3f3f3; --line:#e3e3e3;
+    --text:#1f1f1f; --muted:#6b6b6b; --accent:#2563eb; --ok:#059669; --warn:#b45309;
+    --user:#eef1f5; --think:#f6f7f9;
+    --hover:#ececec; --code-bg:#f5f5f5; --code-inline:#f0f0f0;
+    --table-head:#f4f4f4; --table-td:#ffffff; --table-line:#e6e6e6;
+    --step-line:#ececec; --quote-line:#d8d8d8;
+    --del-line:#f2d3d6; --del-bg:#fdf2f3; --del-fg:#c0392b;
+    --scroll:#d2d2d2;
+  }
+  html[data-theme="sand"]{
+    --bg:#faf8f3; --panel:#fffdf8; --panel-2:#f3efe6; --line:#e6dfd1;
+    --text:#2b2620; --muted:#786f61; --accent:#c2610c; --ok:#3f7d4e; --warn:#a16207;
+    --user:#f2ebdd; --think:#f8f4ec;
+    --hover:#efe8da; --code-bg:#f7f2e8; --code-inline:#f0e9dc;
+    --table-head:#f4eee2; --table-td:#fffdf8; --table-line:#e9e2d4;
+    --step-line:#ebe4d6; --quote-line:#ddd4c2;
+    --del-line:#edd6d0; --del-bg:#fcf1ee; --del-fg:#b4432f;
+    --scroll:#d8cfbd;
+  }
+  html[data-theme="sand"] aside{background:#f5f1e8;border-right-color:#e6dfd1}
+  html[data-theme="sand"] .top-sep{background:#ddd4c2}
+
+  html[data-theme="mist"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel-2:#eef1f4; --line:#d6dde4;
+    --text:#1f2328; --muted:#5f6b76; --accent:#0969da; --ok:#1a7f37; --warn:#9a6700;
+    --user:#eaf2fb; --think:#f6f8fa;
+    --hover:#e9eef3; --code-bg:#f6f8fa; --code-inline:#eef1f4;
+    --table-head:#f2f5f8; --table-td:#ffffff; --table-line:#dde3e9;
+    --step-line:#e3e8ee; --quote-line:#cfd8e1;
+    --del-line:#f0d5d8; --del-bg:#fdf3f4; --del-fg:#b4232f;
+    --scroll:#ccd5de;
+  }
+  html[data-theme="mist"] aside{background:#f0f4f8;border-right-color:#d6dde4}
+  html[data-theme="mist"] .top-sep{background:#cfd8e1}
+
+  html[data-theme="midnight"]{
+    --bg:#0a0c11; --panel:#101319; --panel-2:#171b23; --line:#222835;
+    --text:#e4e8f0; --muted:#8792a4; --accent:#5b8cff; --ok:#3ddc97; --warn:#f5c451;
+    --user:#19202e; --think:#11141b;
+    --hover:#1c222c; --code-bg:#0d1016; --code-inline:#181e28;
+    --table-head:#151a22; --table-td:#11151c; --table-line:#232a36;
+    --step-line:#1c222c; --quote-line:#2c3543;
+    --del-line:#3a2a2e; --del-bg:#241a1d; --del-fg:#e08a92;
+    --scroll:#28303d;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-feature-settings:"kern" 1,"liga" 1,"calt" 1;text-rendering:optimizeLegibility;background:var(--bg);color:var(--text);font:14.5px/1.62 "Inter","HarmonyOS Sans SC","PingFang SC","SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC","WenQuanYi Micro Hei","Microsoft YaHei",sans-serif;overflow:hidden}
+  #app{display:flex;height:100%}
+
+  aside{width:288px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  aside header{display:flex;align-items:center;gap:8px;padding:14px 14px 10px}
+  aside header h1{font-size:13px;font-weight:600;letter-spacing:.3px;margin:0;flex:1;color:var(--muted)}
+  .icon-btn{width:28px;height:28px;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);cursor:pointer;font-size:15px;line-height:1;display:grid;place-items:center}
+  .icon-btn:hover{background:var(--hover);border-color:#3a3a3a}
+  #q{margin:0 14px 10px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:13px;outline:none}
+  #q:focus{border-color:var(--accent)}
+  #list{flex:1;overflow:auto;padding:0 8px 12px;min-height:0}
+  #list::-webkit-scrollbar{width:8px}
+  #list::-webkit-scrollbar-thumb{background:var(--hover);border-radius:4px}
+
+  .group{font-size:11px;color:var(--muted);letter-spacing:.2px;padding:14px 10px 6px;font-weight:500}
+  .item{padding:8px 9px;border-radius:8px;cursor:pointer;display:flex;gap:9px;align-items:flex-start;margin-bottom:1px}
+  .item:hover{background:var(--panel-2)}
+  .item.active{background:var(--hover);box-shadow:inset 0 0 0 1px var(--line)}
+  .dot{width:6px;height:6px;border-radius:50%;margin-top:7px;flex-shrink:0;background:#4a4a4a}
+  .dot.working{background:var(--accent);box-shadow:0 0 0 3px rgba(76,141,255,.15)}
+  .dot.done{background:var(--ok)}
+  .item .body{min-width:0;flex:1}
+  .item .t{font-size:13.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .m{font-size:10px;color:var(--muted);margin-top:5px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+  .main-body{flex:1;display:flex;min-height:0}
+  #preview{width:46%;min-width:320px;display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--panel);min-height:0}
+  #preview.hidden{display:none}
+  .pv-bar{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);flex-shrink:0}
+  .pv-bar input{flex:1;min-width:0;padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:12px;outline:none}
+  .pv-bar input:focus{border-color:var(--accent)}
+  .pv-btn{width:28px;height:28px;flex-shrink:0;border-radius:7px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;font-size:13px;padding:0}
+  .pv-btn:hover{color:var(--text);background:#2b2b2b}
+  #pvFrame{flex:1;min-height:0;width:100%;border:none;background:#fff}
+  main header{height:54px;flex-shrink:0;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px;padding:0 20px;background:var(--panel)}
+  #title{font-size:14px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #model{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;outline:none;max-width:188px}
+
+  #msgs{flex:1;overflow:auto;padding:18px 0 6px;min-height:0;scroll-behavior:auto}
+  #msgs::-webkit-scrollbar{width:10px}
+  #msgs::-webkit-scrollbar-thumb{background:var(--hover);border-radius:5px}
+  .wrap{max-width:calc(980px / var(--zoom,1));margin:0 auto;padding:0 calc(30px / var(--zoom,1))}
+  /* 页面缩放时，消息正文按 1/zoom 反向补偿，保持阅读字号不变 */
+  #msgs .a,#msgs .u .bubble{font-size:calc(15px / var(--zoom,1))}
+  #msgs .md-pre code{font-size:calc(12.5px / var(--zoom,1))}
+  #msgs .a code{font-size:calc(12px / var(--zoom,1))}
+  #msgs .state{font-size:calc(11px / var(--zoom,1))}
+  #msgs details.think summary{font-size:calc(12px / var(--zoom,1))}
+  #msgs details.think .c,#msgs .r-step{font-size:calc(12.5px / var(--zoom,1))}
+  #msgs .tool{font-size:calc(11.5px / var(--zoom,1))}
+
+  .req{margin-bottom:18px}
+  .u{display:flex;justify-content:flex-end;margin-bottom:10px}
+  .u .bubble{background:var(--user);border:1px solid var(--line);border-radius:13px 13px 4px 13px;padding:8px 12px;max-width:86%;white-space:pre-wrap;word-break:break-word}
+  .a{background:var(--panel);border:1px solid var(--line);border-radius:13px 13px 13px 4px;padding:13px 16px;line-height:1.72;word-break:break-word}
+  .a p{margin:0 0 10px}
+  .a p:last-child{margin:0}
+
+  details.think{margin-bottom:10px;background:var(--think);border:1px solid var(--step-line);border-radius:9px;overflow:hidden}
+  details.think summary{cursor:pointer;padding:7px 11px;font-size:12px;color:var(--muted);list-style:none;user-select:none}
+  details.think summary::-webkit-details-marker{display:none}
+  details.think summary::before{content:"▸ ";color:#8a8a8a}
+  details.think[open] summary::before{content:"▾ "}
+  details.think .c{padding:2px 12px 10px;color:var(--muted);font-size:12.5px}
+  .r-step{white-space:pre-wrap;padding:4px 0;border-bottom:1px solid var(--step-line)}
+  .r-step:last-child{border-bottom:none}
+  .tool{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);background:#1e1e1e;border:1px solid #2e2e2e;border-radius:7px;padding:3px 8px;margin:0 6px 6px 0}
+  .state{font-size:11px;color:var(--muted);margin-top:8px}
+  .state.working{color:var(--accent)}
+  .state.error{color:#f26d6d}
+
+  footer{flex-shrink:0;border-top:1px solid var(--line);padding:10px 30px 12px;background:var(--panel)}
+  .composer-wrap{max-width:calc(980px / var(--zoom,1));margin:0 auto}
+  .attach-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .thumb{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:#1e1e1e}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb button{position:absolute;top:2px;right:2px;width:17px;height:17px;border-radius:50%;border:none;background:#000000b8;color:#fff;font-size:11px;line-height:1;cursor:pointer;padding:0}
+  .composer{max-width:820px;margin:0 auto;display:flex;gap:10px;align-items:flex-end}
+  #pick{height:44px;width:44px;flex-shrink:0;border-radius:11px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);cursor:pointer;font-size:18px}
+  #pick:hover{color:var(--text)}
+  #input{flex:1;resize:none;min-height:44px;max-height:190px;padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font:inherit;outline:none;line-height:1.5}
+  #input:focus{border-color:var(--accent)}
+  #send{height:44px;padding:0 20px;border-radius:11px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+  #send:disabled{opacity:.45;cursor:default}
+  .hint{max-width:980px;margin:6px auto 0;font-size:11px;color:var(--muted)}
+
+  html.is-linux body{font-size:16px;line-height:1.7;font-weight:500}
+  html.is-linux .item .m{font-weight:400;font-size:10.5px}
+  .empty{height:100%;display:grid;place-items:center;color:var(--muted);font-size:13px}
+  .auth{position:fixed;inset:0;background:#0d0d0de8;display:none;place-items:center;z-index:50}
+  .auth.show{display:grid}
+  .auth .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;width:320px}
+  .auth h3{margin:0 0 6px;font-size:14px}
+  .auth p{margin:0 0 14px;font-size:12px;color:var(--muted)}
+  .auth input{width:100%;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);outline:none;font:inherit}
+  .auth input:focus{border-color:var(--accent)}
+  .auth button{margin-top:12px;width:100%;height:38px;border:none;border-radius:9px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2a1f22;border:1px solid #4a2b30;color:#f5c2c7;padding:8px 14px;border-radius:9px;font-size:12.5px;opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{opacity:1}
+
+  .a code{background:var(--panel-2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font:12px ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Noto Sans Mono CJK SC",monospace}
+  .md-pre{background:var(--code-bg);border:1px solid var(--step-line);border-radius:8px;padding:10px 12px;overflow:auto;margin:8px 0}
+  .md-pre code{background:none;border:none;padding:0;font:12.5px/1.6 ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Noto Sans Mono CJK SC",monospace;white-space:pre}
+  .a h3,.a h4,.a h5,.a h6{margin:14px 0 6px;font-size:14px;font-weight:600}
+  .a ul,.a ol{margin:6px 0;padding-left:20px}
+  .a li{margin:2px 0}
+  .a blockquote{border-left:2px solid var(--quote-line);margin:8px 0;padding:2px 12px;color:#ffffffa6}
+  .a hr{border:none;border-top:1px solid #2e2e2e;margin:12px 0}
+  .a a{color:#6ea8ff;text-decoration:none}
+  .a a:hover{text-decoration:underline}
+  .md-table{overflow:auto;margin:8px 0}
+  .md-table table{border-collapse:collapse;font-size:12.5px}
+  .md-table{border:1px solid var(--line);border-radius:9px}
+  .md-table th,.md-table td{border-bottom:1px solid var(--table-line);padding:8px 12px;text-align:left}
+  .md-table th{background:var(--table-head);font-weight:600;color:var(--text);border-bottom:1px solid var(--line)}
+  .md-table td{background:var(--table-td)}
+  .md-table tr:last-child td{border-bottom:none}
+  .md-table table{border-collapse:separate;border-spacing:0;width:100%}
+  .top-sep{width:1px;height:16px;background:#3d3d3d;flex-shrink:0;margin:0 4px}
+  .zoom{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);padding:2px}
+  .zoom button{width:22px;height:22px;border:none;background:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0;border-radius:5px}
+  .zoom button:hover{background:var(--hover);color:var(--text)}
+  .zoom span{font-size:11px;color:var(--muted);min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
+  .switch{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;padding:4px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2)}
+  .switch:hover{color:var(--text)}
+  .switch input{appearance:none;width:26px;height:15px;border-radius:8px;background:#3a3a3a;position:relative;cursor:pointer;transition:.15s;margin:0}
+  .switch input::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#cfcfcf;transition:.15s}
+  .switch input:checked{background:var(--accent)}
+  .switch input:checked::after{left:13px;background:#fff}
+  #send.stop{background:#b3404a}
+  .item{position:relative}
+  .item .del{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:6px;border:1px solid var(--del-line);background:var(--del-bg);color:var(--del-fg);cursor:pointer;opacity:0;font-size:14px;line-height:1;padding:0}
+  .item:hover .del{opacity:1}
+  .item .del:hover{background:#3a2227;color:#ff9aa2}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <header>
+      <h1>WORKBUDDY</h1>
+      <button class="icon-btn" id="themeBtn" title="切换主题">◐</button>
+      <button class="icon-btn" id="pvToggle" title="预览面板">▤</button>
+      <button class="icon-btn" id="new" title="新建会话">＋</button>
+      <button class="icon-btn" id="refresh" title="刷新">↻</button>
+    </header>
+    <input id="q" placeholder="搜索会话" autocomplete="off" />
+    <div id="list"></div>
+  </aside>
+  <main>
+    <header>
+      <div id="title">选择左侧会话</div>
+      <label class="switch" title="始终展开思考过程">
+        <input type="checkbox" id="showThink" />
+        <span>思考</span>
+      </label>
+      <span class="top-sep"></span>
+      <div class="zoom" title="页面缩放（Ctrl/⌘ + 滚轮）">
+        <button id="zoomOut">A−</button>
+        <span id="zoomVal">100%</span>
+        <button id="zoomIn">A+</button>
+      </div>
+      <select id="model" title="切换模型"><option>加载中…</option></select>
+    </header>
+    <div class="main-body">
+      <div id="msgs"><div class="empty">WorkBuddy 远程控制台</div></div>
+      <aside id="preview" class="hidden">
+        <div class="pv-bar">
+          <input id="pvUrl" placeholder="https://… 或 /preview/本机绝对路径" spellcheck="false" />
+          <button class="pv-btn" id="pvGo" title="加载">↵</button>
+          <button class="pv-btn" id="pvScan" title="从当前会话找 HTML">⟳</button>
+          <button class="pv-btn" id="pvReload" title="刷新">↻</button>
+          <button class="pv-btn" id="pvClose" title="关闭">×</button>
+        </div>
+        <iframe id="pvFrame" title="预览"></iframe>
+      </aside>
+    </div>
+    <footer>
+      <div class="composer-wrap">
+        <div class="attach-row" id="attachRow"></div>
+        <div class="composer">
+          <button id="pick" title="添加图片">＋</button>
+          <textarea id="input" placeholder="输入消息，回车发送，Shift + 回车换行，可直接粘贴图片" rows="1"></textarea>
+          <button id="send" disabled>发送</button>
+        </div>
+      </div>
+      <input type="file" id="filePick" accept="image/*" multiple style="display:none" />
+      <div class="hint" id="hint">直连本机 WorkBuddy 主进程，会话与桌面端实时同步</div>
+    </footer>
+  </main>
+</div>
+<div class="auth" id="auth">
+  <div class="box">
+    <h3>需要访问密码</h3>
+    <p>这个桥接服务已开启鉴权，请输入启动时设置的令牌。</p>
+    <input id="authInput" type="password" placeholder="访问令牌" autocomplete="current-password" />
+    <button id="authBtn">进入</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="/md.js"></script>
+<script>
+if (/Linux/.test(navigator.platform || '')) document.documentElement.classList.add('is-linux');
+const $ = (s) => document.querySelector(s);
+const state = { sessions: [], spaces: [], current: null, timer: null, models: [], lastSig: '', running: false, polling: false, messages: [], total: null, debounce: null, es: null, lastPollAt: 0, stick: true, _ro: null };
+let SHOW_THINK = localStorage.getItem('wb.showThink') === '1';
+const RUNNING_STATES = new Set(['streaming', 'working', 'running', 'pending', 'queued', 'starting']);
+const isRunning = (s) => RUNNING_STATES.has(String(s || ''));
+const thinkState = new Map();  // 用户手动折叠/展开的覆盖值
+let pendingImages = [];        // 待发送图片 { name, mimeType, b64, dataUrl }
+
+async function compressImage(file, maxSide = 1600, quality = 0.85) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const w = Math.round(bitmap.width * scale);
+  const h = Math.round(bitmap.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
+  return { name: file.name || ('image-' + Date.now() + '.jpg'), mimeType: 'image/jpeg', b64: dataUrl.split(',')[1], dataUrl };
+}
+
+function renderAttach() {
+  const row = $('#attachRow');
+  row.textContent = '';
+  pendingImages.forEach((img, i) => {
+    const d = document.createElement('div');
+    d.className = 'thumb';
+    const im = document.createElement('img');
+    im.src = img.dataUrl;
+    const btn = document.createElement('button');
+    btn.textContent = '×';
+    btn.onclick = () => { pendingImages.splice(i, 1); renderAttach(); };
+    d.append(im, btn);
+    row.appendChild(d);
+  });
+}
+
+async function addFiles(files) {
+  for (const f of files) {
+    if (!f.type.startsWith('image/')) { toast('目前只支持图片附件'); continue; }
+    try { pendingImages.push(await compressImage(f)); }
+    catch (e) { toast('图片处理失败：' + e.message); }
+  }
+  renderAttach();
+}
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+(() => {
+  const t = new URLSearchParams(location.search).get('token');
+  if (t) localStorage.setItem('wb.token', t);
+})();
+const ONCE = new URLSearchParams(location.search).has('once');  // 截图/打印用：只渲染一次，不轮询
+const getToken = () => localStorage.getItem('wb.token') || '';
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  const t = getToken();
+  if (t) headers['Authorization'] = 'Bearer ' + t;
+  const r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) {
+    $('#auth').classList.add('show');
+    setTimeout(() => $('#authInput').focus(), 30);
+    throw new Error('需要访问密码');
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
+  return j.value !== undefined ? j.value : j;
+}
+
+function fmtTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  if (d.toDateString() === now.toDateString()) {
+    const diff = (now - ts) / 1000;
+    if (diff < 60) return '刚刚';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return '昨天';
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}-${pad(d.getDate())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function statusOf(s) {
+  if (isRunning(s.state)) return 'working';
+  if (s.state === 'error' || s.state === 'failed') return 'error';
+  return 'done';
+}
+
+function getCollapsed() {
+  try { return JSON.parse(localStorage.getItem('wb.collapsed') || '{}'); } catch { return {}; }
+}
+function setCollapsed(key, v) {
+  const c = getCollapsed();
+  c[key] = v;
+  localStorage.setItem('wb.collapsed', JSON.stringify(c));
+}
+
+function sessionNode(s) {
+  const el = document.createElement('div');
+  el.className = 'item' + (state.current?.id === s.id ? ' active' : '');
+  el.onclick = () => openSession(s.id);
+  const dot = document.createElement('span');
+  dot.className = 'dot ' + statusOf(s);
+  const body = document.createElement('div');
+  body.className = 'body';
+  const t = document.createElement('div');
+  t.className = 't';
+  t.textContent = s.title || '(未命名)';
+  const m = document.createElement('div');
+  m.className = 'm';
+  m.textContent = fmtTime(s.lastActivityAt || s.updatedAt);
+  body.append(t, m);
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.title = '删除会话';
+  del.textContent = '×';
+  del.onclick = (ev) => { ev.stopPropagation(); removeSession(s.id, s.title); };
+  el.append(dot, body, del);
+  return el;
+}
+
+function renderList() {
+  const q = $('#q').value.trim().toLowerCase();
+  const items = state.sessions.filter((s) => !q || (s.title || '').toLowerCase().includes(q));
+  const box = $('#list');
+  box.textContent = '';
+
+  const used = new Set();
+  const groups = [];
+
+  for (const sp of state.spaces) {
+    const f = sp.folder;
+    if (!f) continue;
+    const arr = items.filter((s) => {
+      if (used.has(s.id)) return false;
+      const cwd = s.space?.cwd || '';
+      const hit = cwd === f || cwd.startsWith(f + '/') || cwd.includes('/Worktrees/' + sp.name + '/');
+      if (hit) used.add(s.id);
+      return hit;
+    });
+    if (arr.length) groups.push({ key: sp.id, label: sp.name, items: arr, collapsible: true });
+  }
+
+  const rest = items.filter((s) => !used.has(s.id));
+  if (rest.length) groups.push({ key: '__ungrouped', label: '未分组', items: rest, collapsible: false });
+
+  if (!groups.length) {
+    const e = document.createElement('div');
+    e.className = 'empty';
+    e.textContent = q ? '没有匹配的会话' : '没有会话';
+    box.appendChild(e);
+    return;
+  }
+
+  const collapsed = getCollapsed();
+  for (const g of groups) {
+    const head = document.createElement('div');
+    head.className = 'group';
+    const folded = g.collapsible && collapsed[g.key];
+    head.textContent = (g.collapsible ? (folded ? '▸ ' : '▾ ') : '') + g.label + ' · ' + g.items.length;
+    if (g.collapsible) {
+      head.style.cursor = 'pointer';
+      head.onclick = () => { setCollapsed(g.key, !folded); renderList(); };
+    }
+    box.appendChild(head);
+    if (folded) continue;
+    for (const s of g.items) box.appendChild(sessionNode(s));
+  }
+}
+
+async function loadSessions() {
+  const v = await api('/sessions?space=local&size=60');
+  state.sessions = (v.items || []).slice().sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+  renderList();
+}
+
+async function loadSpaces() {
+  try {
+    const v = await api('/spaces');
+    state.spaces = (v || []).filter((s) => s.status === 'active');
+  } catch {
+    state.spaces = [];
+  }
+}
+
+async function loadModels() {
+  try {
+    const v = await api('/models');
+    state.models = v.items || [];
+    const sel = $('#model');
+    sel.textContent = '';
+    for (const m of state.models) {
+      const o = document.createElement('option');
+      o.value = m.id;
+      o.textContent = m.name || m.id;
+      sel.appendChild(o);
+    }
+  } catch {}
+}
+
+function renderAssistant(ac) {
+  const frag = document.createDocumentFragment();
+  let box = null;
+
+  const openBox = () => {
+    const d = document.createElement('details');
+    d.className = 'think';
+    d.open = SHOW_THINK;
+    const sum = document.createElement('summary');
+    sum.textContent = '执行过程';
+    const body = document.createElement('div');
+    body.className = 'c';
+    d.append(sum, body);
+    d._body = body;
+    d._steps = 0;
+    frag.appendChild(d);
+    box = d;
+  };
+
+  for (const it of ac) {
+    if (!it) continue;
+    if (it.type === 'reasoning' || it.type === 'tool') {
+      if (!box) openBox();
+      box._steps++;
+      if (it.type === 'reasoning') {
+        const txt = (it.text || '').trim();
+        if (txt) {
+          const p = document.createElement('div');
+          p.className = 'r-step';
+          p.textContent = txt;
+          box._body.appendChild(p);
+        }
+      } else {
+        const tag = document.createElement('span');
+        tag.className = 'tool' + (it.status === 'completed' ? ' done' : it.status === 'failed' ? ' fail' : '');
+        tag.textContent = '工具 · ' + (it.name || 'call') + (it.detail ? ' · ' + it.detail : '');
+        box._body.appendChild(tag);
+      }
+    } else {
+      box = null;
+      if (it.type === 'text' && (it.text || '').trim()) {
+        const d = document.createElement('div');
+        d.innerHTML = window.md ? md.render(it.text) : it.text;
+        frag.appendChild(d);
+      }
+    }
+  }
+
+  frag.querySelectorAll('details.think').forEach((d) => {
+    d.querySelector('summary').textContent = `执行过程 · ${d._steps} 步`;
+  });
+  return frag;
+}
+
+// —— 贴底跟随 ——
+// 之前只在渲染「之前」量一次 nearBottom，但 <details open> 展开、图片加载、
+// Markdown 重排都会在渲染「之后」继续改变高度，那时 scrollHeight 还是旧值，
+// 于是停在上面看新消息的顶部。改成用 ResizeObserver 持续跟随：
+// 只要用户还停在底部（state.stick），任何高度变化都重新贴底。
+function atBottom(box) {
+  return box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+}
+
+function stickBottom(box) {
+  box.scrollTop = box.scrollHeight;
+}
+
+function followBottom(box, node) {
+  if (state._ro) { state._ro.disconnect(); state._ro = null; }
+  const ro = new ResizeObserver(() => {
+    if (state.stick) stickBottom(box);
+  });
+  ro.observe(node);
+  state._ro = ro;
+}
+
+function renderMessages(reqs) {
+  const box = $('#msgs');
+  // 渲染前若在底部，渲染后依然要贴底；用户已经往上翻了就不打扰
+  state.stick = atBottom(box);
+
+  const sig = reqs.map((r) => r.id + ':' + (r.finishTimestamp || 0) + ':' + (r.assistantMessage?.content?.length || 0)).join('|');
+  if (sig === state.lastSig) return;
+  state.lastSig = sig;
+
+  box.textContent = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'wrap';
+  for (const r of reqs) {
+    const sec = document.createElement('div');
+    sec.className = 'req';
+
+    const uc = r.userMessage?.content || [];
+    if (uc.length) {
+      const u = document.createElement('div');
+      u.className = 'u';
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      b.textContent = uc.filter((x) => x.type === 'text').map((x) => x.text).join('\n') || '(非文本消息)';
+      u.appendChild(b);
+      sec.appendChild(u);
+    }
+
+    const ac = r.assistantMessage?.content || [];
+    if (ac.length) {
+      const a = document.createElement('div');
+      a.className = 'a';
+      const texts = ac.filter((x) => x.type === 'text').map((x) => x.text || '');
+      if (texts.length) state.lastText = texts.join('\n');
+      a.appendChild(renderAssistant(ac));
+      sec.appendChild(a);
+    }
+
+    const st = document.createElement('div');
+    const s = r.state || 'completed';
+    st.className = 'state' + (isRunning(s) ? ' working' : s === 'error' || s === 'failed' ? ' error' : '');
+    st.textContent = isRunning(s) ? '生成中…' : s === 'cancelled' ? '已中断' : s === 'error' || s === 'failed' ? '失败' : '';
+    if (st.textContent) sec.appendChild(st);
+
+    wrap.appendChild(sec);
+  }
+  box.appendChild(wrap);
+  // 用 ResizeObserver 跟随后续高度变化（展开思考块 / 图片解码 / 字体回流），
+  // 并补两帧 + 一次延时兜底，覆盖首屏图片尚未拿到尺寸的情况。
+  if (state.stick) {
+    stickBottom(box);
+    requestAnimationFrame(() => { if (state.stick) stickBottom(box); });
+    setTimeout(() => { if (state.stick) stickBottom(box); }, 120);
+  }
+  followBottom(box, wrap);
+}
+
+function updateSendBtn() {
+  const btn = $('#send');
+  if (state.running) {
+    btn.textContent = '停止';
+    btn.classList.add('stop');
+    btn.disabled = false;
+  } else {
+    btn.textContent = '发送';
+    btn.classList.remove('stop');
+    btn.disabled = !state.current;
+  }
+}
+
+async function stopRun() {
+  if (!state.current) return;
+  try {
+    await api(`/sessions/${encodeURIComponent(state.current.id)}/cancel`, { method: 'POST' });
+    toast('已发送中断');
+    setTimeout(pollMessages, 500);
+  } catch (e) {
+    toast('中断失败：' + e.message);
+  }
+}
+
+const FULL_TAIL = 16;
+const MINI_TAIL = 3;
+
+function startEvents() {
+  if (ONCE || state.es || !getToken()) return;
+  try {
+    const es = new EventSource('/events?token=' + encodeURIComponent(getToken()));
+    state.es = es;
+    es.onmessage = (ev) => {
+      try {
+        const d = JSON.parse(ev.data);
+        const name = String(d.e || '');
+        if (/conversation|request/i.test(name)) {
+          // 事件很密（8 秒 190+ 条），节流到最多 400ms 一次
+          const GAP = 400;
+          const now = Date.now();
+          const since = now - (state.lastPollAt || 0);
+          if (since >= GAP) {
+            state.lastPollAt = now;
+            pollMessages();
+          } else {
+            clearTimeout(state.debounce);
+            state.debounce = setTimeout(() => {
+              state.lastPollAt = Date.now();
+              pollMessages();
+            }, GAP - since);
+          }
+        }
+      } catch {}
+    };
+    es.onerror = () => { /* EventSource 自带重连 */ };
+  } catch {}
+}
+
+async function pollMessages(full) {
+  if (!state.current || state.polling) return;
+  state.polling = true;
+  const id = encodeURIComponent(state.current.id);
+  try {
+    let v = await api(`/sessions/${id}/messages?tail=${full || !state.messages.length ? FULL_TAIL : MINI_TAIL}`);
+
+    // 请求总数变了说明有新消息，补一次全量
+    if (state.messages.length && v.total !== state.total) {
+      v = await api(`/sessions/${id}/messages?tail=${FULL_TAIL}`);
+      state.messages = v.items || [];
+    } else if (!state.messages.length) {
+      state.messages = v.items || [];
+    } else {
+      // 增量：只替换尾部几条，保留更早的
+      const map = new Map(state.messages.map((m) => [m.id, m]));
+      for (const it of v.items || []) map.set(it.id, it);
+      state.messages = [...map.values()].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    }
+
+    state.total = v.total;
+    const items = state.messages;
+    state.running = items.some((r) => isRunning(r.state));
+    updateSendBtn();
+    renderMessages(items);
+  } catch (e) {
+    $('#hint').textContent = /生成|超时/.test(e.message) ? '会话正在生成，稍后自动刷新' : '读取失败：' + e.message;
+  } finally {
+    state.polling = false;
+  }
+}
+
+async function openSession(id) {
+  const s = state.sessions.find((x) => x.id === id);
+  state.current = s || { id };
+  state.lastSig = '';
+  state.messages = [];
+  state.total = null;
+  // 切会话一律从底部开始看。若不重置，新会话初始 scrollTop=0 会被
+  // atBottom() 判成「用户在看历史」，于是停在顶部。
+  state.stick = true;
+  $('#title').textContent = s?.title || id;
+  state.running = false;
+  updateSendBtn();
+  renderList();
+  await pollMessages();
+  const msgs = $('#msgs');
+  const bottom = () => { if (state.stick) stickBottom(msgs); };
+  bottom();
+  requestAnimationFrame(bottom);
+  setTimeout(bottom, 120);
+
+  try {
+    const cfg = await api(`/sessions/${encodeURIComponent(id)}/config`);
+    if (cfg?.model) {
+      const sel = $('#model');
+      if (![...sel.options].some((o) => o.value === cfg.model)) {
+        const o = document.createElement('option');
+        o.value = cfg.model;
+        o.textContent = cfg.model;
+        sel.appendChild(o);
+      }
+      sel.value = cfg.model;
+    }
+  } catch {}
+
+  startEvents();
+
+  clearTimeout(state.timer);
+  if (!ONCE) {
+    const loop = async () => {
+      await pollMessages();
+      state.timer = setTimeout(loop, state.running ? 4000 : 15000);
+    };
+    loop();
+  }
+}
+
+async function send() {
+  const ta = $('#input');
+  const text = ta.value.trim();
+  if ((!text && !pendingImages.length) || !state.current) return;
+  ta.value = '';
+  ta.style.height = 'auto';
+  $('#send').disabled = true;
+  try {
+    const blocks = [];
+    if (text) blocks.push({ type: 'text', text });
+    for (const img of pendingImages) {
+      blocks.push({
+        type: 'image',
+        data: img.b64,
+        mimeType: img.mimeType,
+        _meta: { displayAsPhrase: true, mentionType: 'file', type: 'file', icon: 'file', filename: img.name },
+      });
+    }
+    await api(`/sessions/${encodeURIComponent(state.current.id)}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks }),
+    });
+    pendingImages = [];
+    renderAttach();
+    // 自己刚发的消息，一定拉回底部
+    state.stick = true;
+    await pollMessages();
+    stickBottom($('#msgs'));
+  } catch (e) {
+    toast('发送失败：' + e.message);
+    ta.value = text;
+  } finally {
+    updateSendBtn();
+  }
+}
+
+async function createSession() {
+  try {
+    const model = $('#model').value || undefined;
+    const r = await api('/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(model ? { model } : {}),
+    });
+    const id = r?.id || r?.conversationId || r?.conversation?.id || r?.item?.id;
+    await loadSessions();
+    if (id) await openSession(id);
+    else toast('已创建，但未拿到会话 ID');
+  } catch (e) {
+    toast('新建失败：' + e.message);
+  }
+}
+
+async function removeSession(id, title) {
+  if (!confirm('彻底删除会话「' + (title || id) + '」？此操作不可恢复。')) return;
+  try {
+    await api(`/sessions/${encodeURIComponent(id)}/delete`, { method: 'POST' });
+    if (state.current?.id === id) {
+      state.current = null;
+      clearTimeout(state.timer);
+      state.lastSig = '';
+      $('#title').textContent = '选择左侧会话';
+      $('#msgs').innerHTML = '<div class="empty">已删除</div>';
+      state.running = false;
+      updateSendBtn();
+    }
+    await loadSessions();
+  } catch (e) {
+    toast('删除失败：' + e.message);
+  }
+}
+
+$('#showThink').checked = SHOW_THINK;
+$('#showThink').onchange = (e) => {
+  SHOW_THINK = e.target.checked;
+  localStorage.setItem('wb.showThink', SHOW_THINK ? '1' : '0');
+  // 展开/收起源码会整体改变高度，切换后直接贴底，否则会停在中间
+  state.stick = true;
+  state.lastSig = '';
+  pollMessages();
+};
+
+$('#model').onchange = async (e) => {
+  if (!state.current) { toast('已选模型，新建会话时生效'); return; }
+  const model = e.target.value;
+  try {
+    const v = await api(`/sessions/${encodeURIComponent(state.current.id)}/model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    toast('模型已切换：' + (v?.model || model));
+  } catch (err) {
+    toast('切换失败：' + err.message);
+  }
+};
+
+(() => {
+  const link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = '/manifest.json' + (getToken() ? '?token=' + encodeURIComponent(getToken()) : '');
+  document.head.appendChild(link);
+})();
+
+$('#authBtn').onclick = async () => {
+  const v = $('#authInput').value.trim();
+  if (!v) return;
+  localStorage.setItem('wb.token', v);
+  $('#auth').classList.remove('show');
+  try {
+    await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
+    renderList();
+    if (state.sessions[0]) openSession(state.sessions[0].id);
+  } catch (e) { toast(e.message); }
+};
+$('#authInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#authBtn').click(); });
+
+const THEMES = [
+  { id: 'dark', name: '深色', icon: '◐' },
+  { id: 'light', name: '浅色', icon: '○' },
+  { id: 'sand', name: '暖白', icon: '◍' },
+  { id: 'mist', name: '雾蓝', icon: '◌' },
+  { id: 'midnight', name: '午夜蓝', icon: '◑' },
+];
+let THEME = new URLSearchParams(location.search).get('theme') || localStorage.getItem('wb.theme') || 'dark';
+function applyTheme(id) {
+  THEME = THEMES.some((x) => x.id === id) ? id : 'dark';
+  if (THEME === 'dark') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', THEME);
+  const t = THEMES.find((x) => x.id === THEME);
+  $('#themeBtn').textContent = t.icon;
+  $('#themeBtn').title = '主题：' + t.name + '（点击切换）';
+  localStorage.setItem('wb.theme', THEME);
+}
+$('#themeBtn').onclick = () => {
+  const i = THEMES.findIndex((x) => x.id === THEME);
+  applyTheme(THEMES[(i + 1) % THEMES.length].id);
+};
+applyTheme(THEME);
+
+let ZOOM = Number(new URLSearchParams(location.search).get('zoom') || localStorage.getItem('wb.zoom') || 1);
+function applyZoom(z) {
+  ZOOM = Math.min(1.6, Math.max(0.7, Math.round(z * 20) / 20));
+  const root = document.documentElement;
+  root.style.setProperty('--zoom', String(ZOOM));
+  root.style.zoom = ZOOM;
+  // zoom 会放大视口占位，补偿 body 高度避免溢出裁切
+  document.body.style.height = (100 / ZOOM) + 'vh';
+  document.body.style.width = (100 / ZOOM) + 'vw';
+  $('#zoomVal').textContent = Math.round(ZOOM * 100) + '%';
+  localStorage.setItem('wb.zoom', String(ZOOM));
+}
+$('#zoomIn').onclick = () => applyZoom(ZOOM + 0.1);
+$('#zoomOut').onclick = () => applyZoom(ZOOM - 0.1);
+window.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+  applyZoom(ZOOM + (e.deltaY > 0 ? -0.1 : 0.1));
+}, { passive: false });
+applyZoom(ZOOM);
+
+$('#pick').onclick = () => $('#filePick').click();
+$('#filePick').onchange = async (e) => { await addFiles([...e.target.files]); e.target.value = ''; };
+$('#input').addEventListener('paste', async (e) => {
+  const files = [...(e.clipboardData?.items || [])]
+    .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+    .map((it) => it.getAsFile())
+    .filter(Boolean);
+  if (files.length) { e.preventDefault(); await addFiles(files); }
+});
+
+async function resolveLocal(url) {
+  // 远程访问时，localhost 指向的是家里那台机器；换成工作机的可达地址
+  if (!/^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/.test(url)) return url;
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) return url;
+  if (!state.info) {
+    try { state.info = await api('/info'); } catch { return url; }
+  }
+  const host = state.info?.tailscale || state.info?.lan;
+  if (!host) return url;
+  return url.replace(/(localhost|127\.0\.0\.1)/, host);
+}
+
+async function openPreview(url) {
+  const panel = $('#preview');
+  panel.classList.remove('hidden');
+  if (url) {
+    const resolved = await resolveLocal(url);
+    $('#pvUrl').value = url;
+    $('#pvFrame').src = resolved;
+    localStorage.setItem('wb.previewUrl', url);
+  } else {
+    const last = localStorage.getItem('wb.previewUrl');
+    if (last && !$('#pvFrame').src) { $('#pvUrl').value = last; $('#pvFrame').src = await resolveLocal(last); }
+  }
+}
+
+function scanHtmlPath() {
+  const text = state.lastText || '';
+  const m = text.match(/\/Users\/[^\s"'`)<]+?\.html?\b/);
+  if (!m) { toast('当前会话里没找到 .html 路径'); return; }
+  openPreview('/preview' + m[0]);
+}
+function closePreview() {
+  $('#preview').classList.add('hidden');
+  localStorage.setItem('wb.previewOpen', '0');
+}
+
+$('#pvToggle').onclick = () => {
+  if ($('#preview').classList.contains('hidden')) {
+    localStorage.setItem('wb.previewOpen', '1');
+    openPreview();
+  } else closePreview();
+};
+$('#pvClose').onclick = closePreview;
+$('#pvGo').onclick = () => openPreview($('#pvUrl').value.trim());
+$('#pvScan').onclick = scanHtmlPath;
+$('#pvReload').onclick = () => { const f = $('#pvFrame'); f.src = f.src; };
+$('#pvUrl').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#pvGo').click(); });
+
+$('#new').onclick = createSession;
+$('#refresh').onclick = () => loadSessions().catch((e) => toast(e.message));
+$('#q').oninput = renderList;
+
+// 用户往上翻就停止跟随，翻回底部则恢复。这样新内容到达时不会把正在
+// 回看历史的用户硬拽到底部。
+$('#msgs').addEventListener('scroll', () => {
+  state.stick = atBottom($('#msgs'));
+}, { passive: true });
+$('#send').onclick = () => (state.running ? stopRun() : send());
+$('#input').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  // 输入法组字期间的回车是在选词，不能当成发送
+  if (e.isComposing || e.keyCode === 229) return;
+
+  if (e.metaKey || e.ctrlKey) { e.preventDefault(); send(); return; }
+
+  // 默认回车发送，Shift+Enter / Alt+Enter 换行（与桌面端一致）
+  if (e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  send();
+});
+$('#input').addEventListener('input', (e) => {
+  const t = e.target;
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 190) + 'px';
+});
+
+(async () => {
+  try {
+    await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
+    renderList();
+    const first = state.sessions.find((x) => (x.title || '').trim()) || state.sessions[0];
+    if (first) openSession(first.id);
+    if (localStorage.getItem('wb.previewOpen') === '1') openPreview();
+  } catch (e) {
+    toast('连接失败：' + e.message + '（如果走代理，请把 100.64.0.0/10 加入代理例外）');
+  }
+})();
+</script>
+</body>
+</html>
