@@ -18,6 +18,9 @@ import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+// 注入到页面里执行的代码放在单独文件，靠 fn.toString() 传过去，
+// 避免模板字符串里嵌套转义（曾导致 /messages 整体 500）
+import { collectMessages, answerPending, probeTypes } from './inject.mjs';
 import { parseArgs } from 'node:util';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -109,6 +112,20 @@ class CDP {
     const p = this._queue.then(() => this._evaluate(expression));
     this._queue = p.then(() => {}, () => {});
     return p;
+  }
+
+  /**
+   * 把一个真实函数送进页面执行，参数走 JSON 序列化。
+   *
+   * 之前所有注入逻辑都写在模板字符串里，一旦里面有 join('\n') 这类转义，
+   * 就会被外层求值成真换行、把注入代码截断，接口直接 500，而且极难定位。
+   * 改成 fn.toString()：源码是源码，参数是 JSON，中间没有任何字符串拼接，
+   * 转义问题从根上消失。
+   */
+  evaluateFn(fn, ...args) {
+    const src = typeof fn === 'function' ? fn.toString() : String(fn);
+    const call = '(' + src + ').apply(null, ' + JSON.stringify(args) + ')';
+    return this.evaluate(call);
   }
 
   async _evaluate(expression) {
@@ -442,46 +459,11 @@ async function serve() {
       if (mMsg && req.method === 'GET') {
         const id = decodeURIComponent(mMsg[1]);
         const tail = Math.min(50, Math.max(1, Number(url.searchParams.get('tail') || 16)));
-        console.log('[messages] start', id);
         const cdp = await getConn();
-        console.log('[messages] cdp ready');
         // requestEntries 是增量读取，对正在生成的会话不会阻塞；
         // requests() 在流式期间会等本轮结束，实测直接挂死。
         const value = await Promise.race([
-          cdp.evaluate(`(async () => {
-          const c = await wb.conversations.get(${JSON.stringify(id)});
-          const r = await c.requestEntries({ byteLength: 131072, resultScope: 'page' });
-          const all = Array.isArray(r.requests) ? r.requests : (r.requests?.items || []);
-          // 在页面侧裁剪：整包几 MB 走 returnByValue 会卡死通道
-          const trim = (b) => {
-            if (!b) return null;
-            if (b.type === 'text' || b.type === 'reasoning') {
-              return { type: b.type, text: (b.text || '').slice(0, 6000) };
-            }
-            if (b.type === 'tool') {
-              const inp = b.rawInput || {};
-              const pick = inp.file_path || inp.path || inp.command || inp.pattern || inp.query || '';
-              const detail = String(pick).split('/').pop().replace(/\s+/g, ' ').slice(0, 48);
-              return { type: 'tool', name: b.toolName || b.title || 'tool', detail, status: b.status };
-            }
-            if (b.type === 'image') return { type: 'image', mimeType: b.mimeType, filename: (b._meta && b._meta.filename) || '' };
-            return { type: b.type };
-          };
-          const tail = ${tail};
-          const items = all.slice(-tail).map((r) => ({
-            id: r.id,
-            timestamp: r.timestamp,
-            finishTimestamp: r.finishTimestamp,
-            state: r.state,
-            userMessage: {
-              content: (r.userMessage?.content || [])
-                .filter((b) => b.type === 'text')
-                .map((b) => ({ type: 'text', text: (b.text || '').slice(0, 6000) })),
-            },
-            assistantMessage: { content: (r.assistantMessage?.content || []).map(trim).filter(Boolean) },
-          }));
-          return { items, total: r.totalRequests, loaded: all.length, tail, hasOlder: r.hasOlder };
-        })()`),
+          cdp.evaluateFn(collectMessages, id, tail),
           new Promise((_, rej) => setTimeout(() => rej(new Error('会话正在生成，稍后刷新')), 4000)),
         ]);
         return send(200, { ok: true, value });
@@ -523,6 +505,28 @@ async function serve() {
           catch (e) { return await c.cancelByUser(); }
         })()`);
         console.log('[messages] done', id);
+        return send(200, { ok: true, value });
+      }
+
+      // 回答 AskUserQuestion 这类「等用户选」的交互。
+      // 之前网页版完全没有这条通路，只能看到桌面端在等，网页上做不了任何操作。
+      const mAnswer = url.pathname.match(/^\/sessions\/([^/]+)\/answer$/);
+      if (mAnswer && req.method === 'POST') {
+        const id = decodeURIComponent(mAnswer[1]);
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const answers = body.answers == null ? body : body.answers;
+        const payload = body.payload == null ? null : body.payload;
+        const cdp = await getConn();
+        const value = await cdp.evaluateFn(answerPending, id, answers, payload);
+        return send(200, { ok: true, value });
+      }
+
+      // 排查用：列出会话里所有块类型与工具名
+      const mProbe = url.pathname.match(/^\/sessions\/([^/]+)\/probe$/);
+      if (mProbe && req.method === 'GET') {
+        const id = decodeURIComponent(mProbe[1]);
+        const cdp = await getConn();
+        const value = await cdp.evaluateFn(probeTypes, id);
         return send(200, { ok: true, value });
       }
 
