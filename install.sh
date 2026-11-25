@@ -89,20 +89,35 @@ if [ "$MODE" = client ]; then
   esac
   mkdir -p "$ICON_DIR"
   ICON_PNG="$ICON_DIR/workbuddy-remote.png"
-  ICON_URL="${WB_ICON_URL:-https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/icon-512.png}"
+
+  # 高清图标走多个镜像：raw.githubusercontent 有 CDN 缓存，新推的文件
+  # 常有一段时间 404，所以 jsDelivr 放第一位。
+  # macOS 要 1024（.icns 里 512@2x 就是从它来的，不能放大凑），Linux 512 够。
+  if [ "$PLATFORM" = macos ]; then ICON_ASSET=icon-1024.png; else ICON_ASSET=icon-512.png; fi
+  ICON_URLS="${WB_ICON_URL:-}
+https://cdn.jsdelivr.net/gh/hacksmo/workbuddy-remote@main/assets/${ICON_ASSET}
+https://raw.githubusercontent.com/hacksmo/workbuddy-remote/8511958/assets/${ICON_ASSET}
+https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/${ICON_ASSET}"
 
   icon_ok() { [ -f "$1" ] && [ "$(wc -c <"$1" | tr -d ' ')" -gt 20000 ]; }
 
   if icon_ok "$ICON_PNG"; then
     dim "图标已存在，跳过"
   else
-    # 先试高清版（512px，约 70KB）。失败再退回内嵌兜底版
     icon_fetched=0
-    if command -v curl >/dev/null 2>&1; then
-      curl -fsSL --max-time 15 "$ICON_URL" -o "$ICON_PNG" 2>/dev/null && icon_ok "$ICON_PNG" && icon_fetched=1
-    elif command -v wget >/dev/null 2>&1; then
-      wget -q -T 15 -O "$ICON_PNG" "$ICON_URL" 2>/dev/null && icon_ok "$ICON_PNG" && icon_fetched=1
-    fi
+    for u in $ICON_URLS; do
+      [ -n "$u" ] || continue
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --max-time 12 "$u" -o "$ICON_PNG.tmp" 2>/dev/null && \
+          icon_ok "$ICON_PNG.tmp" && mv -f "$ICON_PNG.tmp" "$ICON_PNG" && icon_fetched=1 && break
+      elif command -v wget >/dev/null 2>&1; then
+        wget -q -T 12 -O "$ICON_PNG.tmp" "$u" 2>/dev/null && \
+          icon_ok "$ICON_PNG.tmp" && mv -f "$ICON_PNG.tmp" "$ICON_PNG" && icon_fetched=1 && break
+      else
+        break
+      fi
+    done
+    rm -f "$ICON_PNG.tmp" 2>/dev/null || true
     if [ "$icon_fetched" = 0 ]; then
       printf '%s' "$ICON_FALLBACK_B64" | base64 -d >"$ICON_PNG" 2>/dev/null \
         || printf '%s' "$ICON_FALLBACK_B64" | base64 --decode >"$ICON_PNG"
