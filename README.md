@@ -27,7 +27,7 @@ WorkBuddy 是桌面应用，会话和上下文都在本机。想在另一台电�
 **要求**：Node.js 18+、WorkBuddy 桌面版已安装（macOS / Linux）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/__OWNER__/workbuddy-remote/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/install.sh | bash
 ```
 
 装完会得到一个 `workbuddy-remote` 命令：
@@ -52,7 +52,7 @@ http://127.0.0.1:8797/?token=8550acac5c1b32ce...
 ### 手动安装（不想用 curl | bash）
 
 ```bash
-git clone https://github.com/__OWNER__/workbuddy-remote.git
+git clone https://github.com/hacksmo/workbuddy-remote.git
 cd workbuddy-remote
 ./scripts/start.sh
 ```

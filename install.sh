@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-REPO="${WB_REPO:-https://github.com/__OWNER__/workbuddy-remote.git}"
+REPO="${WB_REPO:-https://github.com/hacksmo/workbuddy-remote.git}"
 REF="${WB_REF:-main}"
 DEST="${WB_DIR:-$HOME/.local/share/workbuddy-remote}"
 BIN_DIR="${WB_BIN_DIR:-$HOME/.local/bin}"
