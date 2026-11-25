@@ -231,10 +231,15 @@ EOF
     ok "应用已创建：$APP"
 
     # 加进程序坞（失败不影响使用，用户也可手动拖）
+    # 重装时先检查是否已在程序坞里，避免每次运行都多一个重复图标
     if command -v defaults >/dev/null 2>&1; then
-      defaults write com.apple.dock persistent-apps -array-add \
-        "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>${APP}</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>" \
-        2>/dev/null && killall Dock 2>/dev/null && ok "已添加到程序坞" || true
+      if defaults read com.apple.dock persistent-apps 2>/dev/null | grep -qF "${APP}"; then
+        dim "程序坞里已有图标，跳过"
+      else
+        defaults write com.apple.dock persistent-apps -array-add \
+          "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>${APP}</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>" \
+          2>/dev/null && killall Dock 2>/dev/null && ok "已添加到程序坞" || true
+      fi
     fi
   fi
 
