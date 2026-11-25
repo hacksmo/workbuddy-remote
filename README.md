@@ -2,8 +2,6 @@
 
 从另一台电脑的浏览器里，远程操作你这台机器上的 WorkBuddy —— 看会话、发消息、读长回答、看思考过程，跟坐在那台电脑前一样。
 
-不需要装客户端。一个浏览器标签页就够。
-
 ```
 ┌──────────────┐   HTTPS    ┌──────────────┐   SSH 反向   ┌──────────────┐
 │ 家里电脑      │ ─────────► │ 中转服务器     │ ◄────────── │ 公司工作机     │
@@ -11,6 +9,23 @@
 └──────────────┘            └──────────────┘             └──────────────┘
                                                           ↑ 也可以直连局域网
 ```
+
+## ⚠️ 先搞清楚：你要装哪一端
+
+装错是最常见的错误——在被控机上装了两遍，或者在控制机上装了桥，结果打开的是本机自己的 WorkBuddy。
+
+| | **被控端（开发机/server）** | **控制端（你手上的电脑/client）** |
+|---|---|---|
+| 装在哪 | 跑着 WorkBuddy、你想远程操作的那台 | 你用来操作的那台 |
+| 装什么 | 桥 + 启动脚本 + Node.js | 一个快捷方式，**不用 Node.js** |
+| 用什么命令 | `workbuddy-remote` | `workbuddy` |
+| 作用 | 把本机 WorkBuddy 变成可访问的服务 | 打开一个指向开发机的浏览器窗口 |
+| 是否需要 | 必须 | 可选——有浏览器就够，装它是为了有个独立图标 |
+
+**判断方法**：在要装的那台机器上问自己一句——「WorkBuddy 是装在这台机器上吗？」
+
+- 是 → 装**被控端**（默认模式）
+- 否 → 装**控制端**（加 `--client`）
 
 ## 它解决什么问题
 
@@ -22,7 +37,9 @@ WorkBuddy 是桌面应用，会话和上下文都在本机。想在另一台电�
 
 这个项目绕开这些：直接驱动 WorkBuddy 自己的渲染进程（通过 CDP），把它的能力暴露成一个网页。所以看到的就是同一份真实会话，不是影子副本。
 
-## 一行安装
+## 安装
+
+### A. 被控端（在开发机上装）
 
 **要求**：Node.js 18+、WorkBuddy 桌面版已安装（macOS / Linux）
 
@@ -30,7 +47,7 @@ WorkBuddy 是桌面应用，会话和上下文都在本机。想在另一台电�
 curl -fsSL https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/install.sh | bash
 ```
 
-装完会得到一个 `workbuddy-remote` 命令：
+装完得到一个 `workbuddy-remote` 命令：
 
 ```bash
 workbuddy-remote            # 启动（会重启 WorkBuddy 开启调试端口）
@@ -38,18 +55,36 @@ workbuddy-remote --status   # 看状态
 workbuddy-remote --stop     # 停桥
 ```
 
-启动后终端会打印一个带令牌的地址：
+启动后终端打印带令牌的地址：
 
 ```
 http://127.0.0.1:8797/?token=8550acac5c1b32ce...
 ```
 
-在浏览器打开即可。想让它像原生应用，用 Chrome / Edge 的「安装此应用」或 Safari 的「添加到程序坞」。
+这个地址就是控制端要用的。
 
 > ⚠️ 启动时会重启 WorkBuddy 以获得调试端口，**正在跑的任务会中断**。
-> 如果你的 WorkBuddy 已经带 `--remote-debugging-port=9333` 启动，会跳过重启。
+> 如果你的 WorkBuddy 已带 `--remote-debugging-port=9333` 启动，会跳过重启。
 
-### 手动安装（不想用 curl | bash）
+### B. 控制端（在你要用来操作的那台电脑上装）
+
+不用装 Node.js，也不用克隆仓库。把上面打印的地址填进去：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/install.sh \
+  | bash -s -- --client 'http://192.168.0.52:8797/?token=8550acac5c1b32ce...'
+```
+
+会得到一个 `workbuddy` 命令，以及（macOS 上）一个 `WorkBuddy Remote.app`：
+
+- macOS：出现在「应用程序」里，可拖到程序坞，点开就是无地址栏的独立窗口
+- Linux：桌面项需手动加，或直接用 `workbuddy` 命令
+
+控制端本质只是个浏览器窗口，**不执行本机任何操作**。
+
+> 其实连装都不用：浏览器打开那个地址就行。装控制端只是为了有个像原生应用的图标。
+
+### C. 手动安装（不想用 curl | bash）
 
 ```bash
 git clone https://github.com/hacksmo/workbuddy-remote.git
@@ -178,11 +213,11 @@ macOS 网卡名一般是 `en0`，Linux 用 `ip route get 1.1.1.1` 看。
 
 ```
 workbuddy-remote/
-├── install.sh              一键安装
+├── install.sh              一键安装（区分 server / client 两种角色）
 ├── scripts/
-│   ├── start.sh            启动器（跨平台，核心）
+│   ├── start.sh            被控端启动器（跨平台，核心）
 │   ├── autostart.sh        开机自启
-│   └── tunnel.sh           反向 SSH 隧道
+│   └── tunnel.sh           反向 SSH 隧道（外网访问用）
 ├── bridge/
 │   └── cdp.mjs             CDP 桥 + HTTP 服务
 ├── web/
@@ -192,6 +227,20 @@ workbuddy-remote/
 │   └── icons/              PWA 图标
 └── deploy/
     └── nginx.conf.example  中转服务器反代配置
+```
+
+## 卸载
+
+```bash
+# 被控端
+workbuddy-remote --stop
+./scripts/autostart.sh uninstall          # 装过自启的话
+rm -rf ~/.local/share/workbuddy-remote ~/.config/workbuddy-remote
+rm -f ~/.local/bin/workbuddy-remote
+
+# 控制端
+rm -rf "$HOME/Applications/WorkBuddy Remote.app" ~/.local/share/workbuddy-remote/client-profile
+rm -f ~/.local/bin/workbuddy
 ```
 
 ## 安全提醒
