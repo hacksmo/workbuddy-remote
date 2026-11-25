@@ -75,12 +75,19 @@ curl -fsSL https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/insta
   | bash -s -- --client 'http://192.168.0.52:8797/?token=8550acac5c1b32ce...'
 ```
 
-会得到一个 `workbuddy` 命令，以及（macOS 上）一个 `WorkBuddy Remote.app`：
+会得到一个 `workbuddy` 命令，以及系统应用菜单里的图标：
 
-- macOS：出现在「应用程序」里，可拖到程序坞，点开就是无地址栏的独立窗口
-- Linux：桌面项需手动加，或直接用 `workbuddy` 命令
+| 平台 | 装完得到什么 |
+|---|---|
+| **macOS** | `WorkBuddy Remote.app`，自动加进程序坞，带图标。点开就是无地址栏的独立窗口 |
+| **Linux** | 应用菜单里的「WorkBuddy Remote」，带图标。点开同上 |
+
+装完直接点图标就能连上开发机，不用开终端、不用记地址。
 
 控制端本质只是个浏览器窗口，**不执行本机任何操作**。
+
+> 需要 Chrome / Edge / Brave 等 Chromium 系浏览器才有独立窗口。
+> 都没有时会退化成系统默认浏览器（有地址栏）。
 
 > 其实连装都不用：浏览器打开那个地址就行。装控制端只是为了有个像原生应用的图标。
 
@@ -238,9 +245,16 @@ workbuddy-remote --stop
 rm -rf ~/.local/share/workbuddy-remote ~/.config/workbuddy-remote
 rm -f ~/.local/bin/workbuddy-remote
 
-# 控制端
-rm -rf "$HOME/Applications/WorkBuddy Remote.app" ~/.local/share/workbuddy-remote/client-profile
+# 控制端（macOS）
+rm -rf "$HOME/Applications/WorkBuddy Remote.app" \
+       ~/.local/share/workbuddy-remote/client-profile
 rm -f ~/.local/bin/workbuddy
+
+# 控制端（Linux）
+rm -f ~/.local/share/applications/workbuddy-remote.desktop \
+      ~/.local/share/icons/hicolor/512x512/apps/workbuddy-remote.png \
+      ~/.local/bin/workbuddy
+rm -rf ~/.local/share/workbuddy-remote/client-profile
 ```
 
 ## 安全提醒

@@ -78,14 +78,47 @@ if [ "$MODE" = client ]; then
 
   mkdir -p "$BIN_DIR"
 
-  # 找可用的 Chromium 系浏览器（app 模式需要它，能开出无地址栏的独立窗口）
+  # 图标：优先从仓库下载高清版，失败则用脚本内嵌的 128px 兜底版
+  # 这样脚本本身不臃肿（兜底版约 6KB），同时正常联网时能拿到高清图标
+  ICON_FALLBACK_B64='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'
+
+  APP_NAME="WorkBuddy"
+  case "$PLATFORM" in
+    macos) ICON_DIR="$HOME/.local/share/workbuddy-remote" ;;
+    linux) ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/512x512/apps" ;;
+  esac
+  mkdir -p "$ICON_DIR"
+  ICON_PNG="$ICON_DIR/workbuddy-remote.png"
+  ICON_URL="${WB_ICON_URL:-https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/icon-512.png}"
+
+  icon_ok() { [ -f "$1" ] && [ "$(wc -c <"$1" | tr -d ' ')" -gt 20000 ]; }
+
+  if icon_ok "$ICON_PNG"; then
+    dim "图标已存在，跳过"
+  else
+    # 先试高清版（512px，约 70KB）。失败再退回内嵌兜底版
+    icon_fetched=0
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --max-time 15 "$ICON_URL" -o "$ICON_PNG" 2>/dev/null && icon_ok "$ICON_PNG" && icon_fetched=1
+    elif command -v wget >/dev/null 2>&1; then
+      wget -q -T 15 -O "$ICON_PNG" "$ICON_URL" 2>/dev/null && icon_ok "$ICON_PNG" && icon_fetched=1
+    fi
+    if [ "$icon_fetched" = 0 ]; then
+      printf '%s' "$ICON_FALLBACK_B64" | base64 -d >"$ICON_PNG" 2>/dev/null \
+        || printf '%s' "$ICON_FALLBACK_B64" | base64 --decode >"$ICON_PNG"
+      dim "高清图标下载失败，已用内置版本（外观略有差异，不影响使用）"
+    fi
+  fi
+
+  # 找 Chromium 系浏览器 —— 只有它能开出「无地址栏」的独立窗口
   CHROME=""
   if [ "$PLATFORM" = macos ]; then
     for c in \
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
       "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" \
       "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
-      "/Applications/Chromium.app/Contents/MacOS/Chromium"; do
+      "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+      "/Applications/Arc.app/Contents/MacOS/Arc"; do
       [ -x "$c" ] && { CHROME="$c"; break; }
     done
   else
@@ -93,50 +126,81 @@ if [ "$MODE" = client ]; then
       command -v "$n" >/dev/null 2>&1 && { CHROME="$(command -v "$n")"; break; }
     done
   fi
-  [ -n "$CHROME" ] || warn "没找到 Chrome / Edge，将用系统默认浏览器打开（没有独立窗口）"
+  if [ -z "$CHROME" ]; then
+    warn "没找到 Chrome / Edge / Brave 等 Chromium 系浏览器"
+    dim "会用系统默认浏览器打开（有地址栏，不是独立窗口）"
+    dim "想要独立窗口请先装 Chrome：https://www.google.com/chrome/"
+  fi
 
   PROFILE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/workbuddy-remote/client-profile"
   mkdir -p "$PROFILE_DIR"
 
-  cat >"$BIN_DIR/workbuddy" <<EOF
+  # 统一的启动逻辑，写进 bin/ 里的命令，.app 和 .desktop 都调它
+  cat >"$BIN_DIR/workbuddy" <<LAUNCHER
 #!/usr/bin/env bash
-# WorkBuddy 控制端 —— 打开远程开发机
-# 由 install.sh --client 生成，重新安装会覆盖
+# WorkBuddy 控制端启动器 —— 打开远程开发机
+# 由 install.sh --client 生成，重装会覆盖
 URL='${CLIENT_URL}'
 PROFILE='${PROFILE_DIR}'
 CHROME='${CHROME}'
 
 if [ -n "\$CHROME" ] && [ -x "\$CHROME" ]; then
+  # --app 开无地址栏窗口；独立 user-data-dir 保证记住登录态且不污染日常浏览器
   exec "\$CHROME" --app="\$URL" --user-data-dir="\$PROFILE" \\
-    --window-size=1440,900 --no-first-run --no-default-browser-check "\$@"
+    --window-size=1440,900 --no-first-run --no-default-browser-check \\
+    --disable-features=Translate --class=WorkBuddyRemote "\$@"
 fi
 
+# 没有 Chromium 系浏览器时退化为系统默认浏览器
 case "\$(uname -s)" in
   Darwin) exec open "\$URL" ;;
   *)      exec xdg-open "\$URL" 2>/dev/null || echo "请手动打开：\$URL" ;;
 esac
-EOF
+LAUNCHER
   chmod +x "$BIN_DIR/workbuddy"
-  ok "命令已安装：$BIN_DIR/workbuddy"
 
-  # macOS 额外做一个 .app，能从应用程序/程序坞直接点
+  # ── macOS：生成 .app，带图标，可拖进程序坞 ──────────────────────────
   if [ "$PLATFORM" = macos ]; then
-    APP="$HOME/Applications/WorkBuddy Remote.app"
+    APP="$HOME/Applications/${APP_NAME} Remote.app"
     rm -rf "$APP"
     mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+
+    # PNG → ICNS。sips + iconutil 是系统自带，失败就退回 png（Finder 也能显示）
+    if command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+      ICONSET="$(mktemp -d)/icon.iconset"
+      mkdir -p "$ICONSET"
+      for s in 16 32 128 256 512; do
+        sips -z $s $s "$ICON_PNG" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null 2>&1
+        d=$((s * 2))
+        sips -z $d $d "$ICON_PNG" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null 2>&1
+      done
+      if iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/app.icns" 2>/dev/null; then
+        ICON_REF='<key>CFBundleIconFile</key><string>app</string>'
+      else
+        cp "$ICON_PNG" "$APP/Contents/Resources/app.png"
+        ICON_REF='<key>CFBundleIconFile</key><string>app.png</string>'
+      fi
+      rm -rf "$(dirname "$ICONSET")"
+    else
+      cp "$ICON_PNG" "$APP/Contents/Resources/app.png"
+      ICON_REF='<key>CFBundleIconFile</key><string>app.png</string>'
+    fi
+
     cat >"$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>WorkBuddy Remote</string>
-    <key>CFBundleDisplayName</key><string>WorkBuddy Remote</string>
+    <key>CFBundleName</key><string>${APP_NAME} Remote</string>
+    <key>CFBundleDisplayName</key><string>${APP_NAME} Remote</string>
     <key>CFBundleIdentifier</key><string>com.workbuddy.remote.client</string>
-    <key>CFBundleVersion</key><string>1.0</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleVersion</key><string>1.1</string>
+    <key>CFBundleShortVersionString</key><string>1.1</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleExecutable</key><string>launch</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    ${ICON_REF}
 </dict>
 </plist>
 PLIST
@@ -145,21 +209,82 @@ PLIST
 exec "${BIN_DIR}/workbuddy"
 EOF
     chmod +x "$APP/Contents/MacOS/launch"
+
+    # 清掉 quarantine 与图标缓存，保证图标立即生效
+    xattr -cr "$APP" 2>/dev/null || true
+    touch "$APP"
     ok "应用已创建：$APP"
-    dim "在「访达 → 应用程序」里能找到，可拖到程序坞"
+
+    # 加进程序坞（失败不影响使用，用户也可手动拖）
+    if command -v defaults >/dev/null 2>&1; then
+      defaults write com.apple.dock persistent-apps -array-add \
+        "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>${APP}</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>" \
+        2>/dev/null && killall Dock 2>/dev/null && ok "已添加到程序坞" || true
+    fi
+  fi
+
+  # ── Linux：生成 .desktop，进应用菜单 ────────────────────────────────
+  if [ "$PLATFORM" = linux ]; then
+    DESKTOP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    mkdir -p "$DESKTOP_DIR"
+    DESKTOP_FILE="$DESKTOP_DIR/workbuddy-remote.desktop"
+
+    # .desktop 规范：Exec 里路径含空格时用双引号包住整体，
+    # 且 %U 必须放在引号外。BIN_DIR 一般没空格，这里按规范处理两种情况。
+    case "$BIN_DIR" in
+      *" "*) DESKTOP_EXEC="\"${BIN_DIR}/workbuddy\"" ;;
+      *)     DESKTOP_EXEC="${BIN_DIR}/workbuddy" ;;
+    esac
+    cat >"$DESKTOP_FILE" <<DESK
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=${APP_NAME} Remote
+Name[zh_CN]=${APP_NAME} 远程
+Comment=打开远程开发机上的 ${APP_NAME}
+Comment[zh_CN]=打开远程开发机上的 ${APP_NAME}
+Exec=$DESKTOP_EXEC %U
+Icon=${ICON_PNG}
+Terminal=false
+Categories=Development;Network;Utility;
+Keywords=workbuddy;remote;
+StartupWMClass=WorkBuddyRemote
+StartupNotify=true
+DESK
+    chmod +x "$DESKTOP_FILE"
+    ok "应用菜单项已创建"
+
+    # 刷新桌面数据库与图标缓存
+    command -v update-desktop-database >/dev/null 2>&1 \
+      && update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+    command -v gtk-update-icon-cache >/dev/null 2>&1 \
+      && gtk-update-icon-cache -f -t "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor" 2>/dev/null || true
+
+    # GNOME 需要标记为可信，否则桌面上的图标点了没反应
+    if command -v gio >/dev/null 2>&1; then
+      gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
+    fi
   fi
 
   echo
   printf '%s控制端安装完成%s\n\n' "$C_B$C_OK" "$C_0"
-  printf '  打开：%sworkbuddy%s\n' "$C_B" "$C_0"
+  case "$PLATFORM" in
+    macos) printf '  %s打开方式%s\n' "$C_B" "$C_0"
+           printf '    · 程序坞里的 %s Remote 图标\n' "$APP_NAME"
+           printf '    · 启动台 / 聚焦搜索「%s Remote」\n' "$APP_NAME"
+           printf '    · 终端 %sworkbuddy%s\n' "$C_B" "$C_0" ;;
+    linux) printf '  %s打开方式%s\n' "$C_B" "$C_0"
+           printf '    · 应用菜单里找「%s Remote」\n' "$APP_NAME"
+           printf '    · 终端 %sworkbuddy%s\n' "$C_B" "$C_0" ;;
+  esac
   case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
-    *) warn "$BIN_DIR 不在 PATH 中："
+    *) echo
+       warn "$BIN_DIR 不在 PATH 中（只影响终端命令，图标不受影响）："
        printf '  export PATH="%s:$PATH"\n' "$BIN_DIR" ;;
   esac
   echo
   dim "目标：$CLIENT_URL"
-  dim "控制端不执行任何本机操作，只是打开一个浏览器窗口。"
   exit 0
 fi
 
