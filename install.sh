@@ -281,7 +281,59 @@ if [ -t 1 ]; then
 fi
 
 if [ -n "$CHROME" ] && [ -x "$CHROME" ]; then
-  # --app 开无地址栏窗口；独立 user-data-dir 保证记住登录态且不污染日常浏览器
+  # 关键：Chrome 的 --app 不接受「唤起已有窗口」——
+  # 已经有实例在跑时，它会把这行命令交给那个实例去「新开一个窗口」，
+  # 于是每点一次图标就多一个窗口，永远堆着不消失。
+  #
+  # 所以先问一下有没有已经开着的 WorkBuddy 窗口：
+  #   有 → 激活它（相当于 app 的「回到窗口」）
+  #   没有 → 才用 --app 新建
+  # 这样点图标的行为就跟普通应用程序一致了。
+
+  # 用 SingletonLock 判断这个 profile 的 Chrome 是否还在跑。
+  # 锁文件是个符号链接，格式 <hostname>-<pid>，拿末尾的 pid 验活。
+  profile_running() {
+    local lock lu pid
+    lock="$PROFILE/SingletonLock"
+    [ -L "$lock" ] || [ -e "$lock" ] || return 1
+    lu="$(readlink "$lock" 2>/dev/null)" || return 1
+    pid="${lu##*-}"
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$pid" 2>/dev/null
+  }
+
+  # 已有窗口 → 激活并退出。AppleScript 只认 Chrome 自己可见的窗口，
+  # 用 8797 / 域名匹配，避免误碰用户日常浏览的窗口。
+  focus_existing() {
+    [ "$(uname -s)" = Darwin ] || return 1
+    profile_running || return 1
+    osascript >/dev/null 2>&1 <<'APPLESCRIPT'
+tell application "Google Chrome"
+  set hit to missing value
+  repeat with w in windows
+    set u to ""
+    try
+      set u to (URL of active tab of w) as string
+    end try
+    if u contains ":8797" or u contains "wb.hackmo.net" then
+      set hit to w
+      exit repeat
+    end if
+  end repeat
+  if hit is missing value then error "no-window"
+  set index of hit to 1
+  try
+    set miniaturized of hit to false
+  end try
+  activate
+end tell
+APPLESCRIPT
+  }
+
+  focus_existing && exit 0
+
+  # 没有现成窗口 → 新建。--app 开无地址栏窗口；独立 user-data-dir
+  # 保证记住登录态且不污染日常浏览器
   exec "$CHROME" --app="$URL" --user-data-dir="$PROFILE" \
     --window-size=1440,900 --no-first-run --no-default-browser-check \
     --disable-features=Translate --class=WorkBuddyRemote ${EXTRA[@]+"${EXTRA[@]}"}
@@ -310,13 +362,60 @@ LAUNCHER
   unset _tmp
   chmod +x "$BIN_DIR/workbuddy"
 
-  # ── macOS：生成 .app，带图标，可拖进程序坞 ──────────────────────────
+  # ── macOS：安装原生壳 ───────────────────────────────────────────────
+  #
+  # 这里和 Linux 走完全不同的路线，原因不是「顺手」：
+  #
+  #   bash 脚本不能作为 CFBundleExecutable 出现在 Dock 里 ——
+  #   Dock 图标归属「进程」，而脚本进程不连 WindowServer。
+  #   早期版本 exec 成 Chrome 后进程身份变成了 Google Chrome，
+  #   Dock 里始终只有 Chrome 没有 WorkBuddy Remote。
+  #
+  #   并且 Chrome 的 --app 没有单实例语义：已有实例时它会新开一个
+  #   窗口，于是点一次图标多一个窗口，永远堆着不消失。
+  #
+  # 所以 macOS 装的是一个真正的原生壳（AppKit + WKWebView，
+  # 约 300KB 的通用二进制）。单实例、Dock 图标、Cmd+Tab 全由
+  # AppKit 提供，行为跟普通 Mac 应用完全一致。
+  #
+  # 壳的源码在 macos/shell.swift，由 macos/build-dmg.sh 编译。
   if [ "$PLATFORM" = macos ]; then
     APP="$HOME/Applications/${APP_NAME} Remote.app"
     rm -rf "$APP"
     mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-    # PNG → ICNS。sips + iconutil 是系统自带，失败就退回 png（Finder 也能显示）
+    # 取预编译好的通用二进制。优先 GitHub Release 附件（体积小、无速率限制），
+    # 其次 raw 的 main 分支最新产物。
+    SHELL_URLS="${WB_SHELL_URL:-}
+https://github.com/hacksmo/workbuddy-remote/releases/latest/download/WorkBuddyRemote
+https://cdn.jsdelivr.net/gh/hacksmo/workbuddy-remote@main/macos/bin/WorkBuddyRemote
+${RAW}/main/macos/bin/WorkBuddyRemote
+https://ghproxy.net/${RAW}/main/macos/bin/WorkBuddyRemote"
+
+    SHELL_BIN="$APP/Contents/MacOS/WorkBuddyRemote"
+    got=0
+    for u in $SHELL_URLS; do
+      [ -n "$u" ] || continue
+      if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --max-time 25 "$u" -o "$SHELL_BIN" 2>/dev/null || continue
+      else
+        wget -q -T 25 -O "$SHELL_BIN" "$u" 2>/dev/null || continue
+      fi
+      # 校验：必须是 Mach-O 可执行文件，大小 > 50KB
+      sz="$(wc -c <"$SHELL_BIN" 2>/dev/null | tr -d ' ')"
+      if [ -n "$sz" ] && [ "$sz" -gt 50000 ] && file "$SHELL_BIN" 2>/dev/null | grep -q "Mach-O"; then
+        got=1
+        break
+      fi
+    done
+
+    if [ "$got" = 0 ]; then
+      rm -rf "$APP"
+      die "原生壳下载失败。请检查网络，或直接下载 DMG：https://github.com/hacksmo/workbuddy-remote/releases/latest"
+    fi
+    chmod +x "$SHELL_BIN"
+
+    # 图标
     if command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
       ICONSET="$(mktemp -d)/icon.iconset"
       mkdir -p "$ICONSET"
@@ -325,16 +424,8 @@ LAUNCHER
         d=$((s * 2))
         sips -z $d $d "$ICON_PNG" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null 2>&1
       done
-      if iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/app.icns" 2>/dev/null; then
-        ICON_REF='<key>CFBundleIconFile</key><string>app</string>'
-      else
-        cp "$ICON_PNG" "$APP/Contents/Resources/app.png"
-        ICON_REF='<key>CFBundleIconFile</key><string>app.png</string>'
-      fi
+      iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/app.icns" 2>/dev/null || true
       rm -rf "$(dirname "$ICONSET")"
-    else
-      cp "$ICON_PNG" "$APP/Contents/Resources/app.png"
-      ICON_REF='<key>CFBundleIconFile</key><string>app.png</string>'
     fi
 
     cat >"$APP/Contents/Info.plist" <<PLIST
@@ -345,29 +436,42 @@ LAUNCHER
     <key>CFBundleName</key><string>${APP_NAME} Remote</string>
     <key>CFBundleDisplayName</key><string>${APP_NAME} Remote</string>
     <key>CFBundleIdentifier</key><string>com.workbuddy.remote.client</string>
-    <key>CFBundleVersion</key><string>1.1</string>
-    <key>CFBundleShortVersionString</key><string>1.1</string>
+    <key>CFBundleVersion</key><string>1.3</string>
+    <key>CFBundleShortVersionString</key><string>1.3</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleExecutable</key><string>launch</string>
-    <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>CFBundleExecutable</key><string>WorkBuddyRemote</string>
+    <key>CFBundleIconFile</key><string>app</string>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSHighResolutionCapable</key><true/>
-    ${ICON_REF}
+    <key>LSMinimumSystemVersion</key><string>12.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
 </dict>
 </plist>
 PLIST
-    cat >"$APP/Contents/MacOS/launch" <<EOF
-#!/bin/bash
-exec "${BIN_DIR}/workbuddy"
-EOF
-    chmod +x "$APP/Contents/MacOS/launch"
 
-    # 清掉 quarantine 与图标缓存，保证图标立即生效
+    # ad-hoc 签名。不签的话 Gatekeeper 会直接拒绝启动，
+    # 用户得右键「打开」绕过 —— 多一步就多一批人放弃。
+    codesign --force --sign - "$APP" 2>/dev/null || true
+
+    # 写入服务器配置，省掉用户第一次打开还要手填
+    CFG_DIR="$HOME/Library/Application Support/WorkBuddy Remote"
+    mkdir -p "$CFG_DIR"
+    LAN_JSON="[]"
+    if [ -n "$CLIENT_LAN_CANDIDATES" ]; then
+      _lan="$(printf '%s\n' "$CLIENT_LAN_CANDIDATES" | grep -v '^$' \
+        | sed 's|.*|"&"|' | paste -sd, -)"
+      [ -n "$_lan" ] && LAN_JSON="[$_lan]"
+    fi
+    cat >"$CFG_DIR/config.json" <<CFG
+{"url":"${CLIENT_URL}","token":"${CLIENT_TOKEN}","lanCandidates":${LAN_JSON}}
+CFG
+    chmod 600 "$CFG_DIR/config.json"
+
     xattr -cr "$APP" 2>/dev/null || true
     touch "$APP"
     ok "应用已创建：$APP"
 
-    # 加进程序坞（失败不影响使用，用户也可手动拖）
-    # 重装时先检查是否已在程序坞里，避免每次运行都多一个重复图标
+    # 加进程序坞
     if command -v defaults >/dev/null 2>&1; then
       if defaults read com.apple.dock persistent-apps 2>/dev/null | grep -qF "${APP}"; then
         dim "程序坞里已有图标，跳过"

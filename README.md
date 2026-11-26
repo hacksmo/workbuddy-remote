@@ -79,23 +79,46 @@ http://127.0.0.1:8797/?token=8550acac5c1b32ce...
 
 不用装 Node.js，也不用克隆仓库。把上面打印的地址填进去：
 
+**macOS —— 下载 DMG（推荐）**
+
+从 [Releases](https://github.com/hacksmo/workbuddy-remote/releases/latest) 下载
+`WorkBuddy-Remote.dmg`，双击挂载，把应用拖进「应用程序」。
+
+第一次打开会问地址和密码；同一 Wi-Fi 下点「扫描」能自动找到被控端，不用手抄 IP。
+
+> 首次打开若提示「无法验证开发者」，右键点图标选「打开」，在弹窗里再点一次
+> 「打开」即可。只需一次（应用是 ad-hoc 签名，没有 Apple 开发者证书）。
+
+也可以走命令行：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/install.sh \
   | bash -s -- --client 'http://192.168.0.52:8797/?token=8550acac5c1b32ce...'
 ```
 
-会得到一个 `workbuddy` 命令，以及系统应用菜单里的图标：
+会得到一个 `workbuddy` 命令，以及 `/Applications/../WorkBuddy Remote.app`：
 
 | 平台 | 装完得到什么 |
 |---|---|
-| **macOS** | `WorkBuddy Remote.app`，自动加进程序坞，带图标。点开就是无地址栏的独立窗口 |
+| **macOS** | `WorkBuddy Remote.app`，自动加进程序坞，带图标。原生壳（AppKit + WKWebView），点开就是独立窗口 |
 | **Linux** | 应用菜单里的「WorkBuddy Remote」，带图标。点开同上 |
 
 装完直接点图标就能连上开发机，不用开终端、不用记地址。
 
 控制端本质只是个浏览器窗口，**不执行本机任何操作**。
 
-> 需要 Chrome / Edge / Brave 等 Chromium 系浏览器才有独立窗口。
+> **macOS 走的是原生壳，不是「脚本 + Chrome --app」。** 原因值得记一下：
+>
+> - Dock 图标归属**进程**，脚本进程不连 WindowServer，Dock 里永远不会有图标。
+>   早期版本 `exec` 成 Chrome 后，进程身份变成 Google Chrome，Dock 里只有 Chrome。
+> - Chrome 的 `--app=` **没有单实例语义**：已有实例时它会把这条命令交给那个实例
+>   「新开一个窗口」，于是点一次图标多一个窗口，永远堆着不消失。
+>
+> 原生壳由 AppKit 免费提供单实例、Dock 图标、Cmd+Tab 和
+> 「点一下收起、再点一下回来」。源码在 `macos/shell.swift`，
+> 用 `macos/build-dmg.sh` 打成通用二进制（Intel + Apple Silicon 都跑）。
+
+> Linux 端需要 Chrome / Edge / Brave 等 Chromium 系浏览器才有独立窗口，
 > 都没有时会退化成系统默认浏览器（有地址栏）。
 
 > 其实连装都不用：浏览器打开那个地址就行。装控制端只是为了有个像原生应用的图标。
@@ -310,6 +333,10 @@ workbuddy-remote/
 │   ├── md.js               Markdown 渲染（无依赖自写）
 │   ├── fonts/              Inter 字体
 │   └── icons/              PWA 图标
+├── macos/
+│   ├── shell.swift         原生壳源码（AppKit + WKWebView）
+│   ├── build-dmg.sh        打 DMG（通用二进制 + 图标 + 签名）
+│   └── bin/WorkBuddyRemote 预编译通用二进制（install.sh 下载它）
 └── deploy/
     └── nginx.conf.example  中转服务器反代配置
 ```

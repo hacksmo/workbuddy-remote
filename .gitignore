@@ -5,3 +5,6 @@ node_modules/
 tunnel.env
 .token
 __pycache__/
+
+# 打包中间产物。DMG 走 GitHub Release 附件，不进仓库。
+dist/
