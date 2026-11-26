@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WorkBuddy Remote — 用另一台电脑接着用工位上的 WorkBuddy</title>
-<meta name="description" content="WorkBuddy 官方只支持手机和平板远程。这个项目让你在另一台电脑的浏览器里打开工位那台的完整界面，会话、队列、模型配置都是同一份。开源，MIT。">
+<title>WorkBuddy Remote — 随时随地，任意 PC 远程 WorkBuddy</title>
+<meta name="description" content="给 WorkBuddy 实现 Codex 那样的远程链接。在任意一台电脑的浏览器里打开工位那台的完整界面，会话、队列、模型配置都是同一份。开源，MIT。">
 <meta name="theme-color" content="#0a0b0e">
 <link rel="icon" href="icon-512.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:type" content="website">
-<meta property="og:title" content="WorkBuddy Remote — 电脑连电脑">
-<meta property="og:description" content="在另一台电脑的浏览器里打开工位那台的完整界面。开源，MIT。">
+<meta property="og:title" content="WorkBuddy Remote — 随时随地，任意 PC 远程 WorkBuddy">
+<meta property="og:description" content="给 WorkBuddy 实现 Codex 那样的远程链接。在任意一台电脑的浏览器里打开工位那台的完整界面。开源，MIT。">
 <meta property="og:image" content="shot-app.jpg">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="stylesheet" href="site.css">
@@ -22,8 +22,8 @@
     <a class="logo" href="/"><img src="icon-512.png" alt="" width="24" height="24">WorkBuddy Remote</a>
     <div class="links">
       <a href="#how">安装</a>
-      <a href="#why">对比</a>
       <a href="#ui">界面</a>
+      <a href="#author">作者</a>
     </div>
     <a class="btn sm" href="https://github.com/hacksmo/workbuddy-remote/releases/latest">下载</a>
   </div>
@@ -32,8 +32,8 @@
 <header class="hero">
   <div class="wrap">
     <p class="tag"><i></i>开源 · MIT</p>
-    <h1>用另一台电脑，<br>接着用工位上的 WorkBuddy。</h1>
-    <p class="sub">官方支持手机和平板远程，没有电脑连电脑。<br class="wide">这个项目补上了。</p>
+    <h1>随时随地，<br>任意 PC 远程 WorkBuddy。</h1>
+    <p class="sub">给 WorkBuddy 实现 Codex 的远程链接功能。</p>
 
     <div class="cta">
       <div class="cmd">
@@ -109,20 +109,25 @@
   </div>
 </section>
 
-<section id="why" class="sec">
+<section id="author" class="sec">
   <div class="wrap">
-    <h2>远程桌面传整屏像素，这里传内容</h2>
-    <div class="table">
-      <div class="tr th"><span></span><span>远程桌面</span><span>这个项目</span></div>
-      <div class="tr"><span>传输内容</span><span>整屏像素</span><span class="good">结构化内容</span></div>
-      <div class="tr"><span>长回答滚动</span><span>等画面刷新</span><span class="good">文字直接推送</span></div>
-      <div class="tr"><span>被控机在忙</span><span>屏幕全被看见</span><span class="good">只有这个会话</span></div>
-      <div class="tr"><span>网络差</span><span>整屏重传</span><span class="good">只补增量</span></div>
+    <div class="author">
+      <img class="avatar" src="avatar.jpg" alt="shuimo" width="76" height="76">
+      <div class="who">
+        <b>shuimo</b>
+        <span>@hacksmo · 深圳</span>
+      </div>
+      <a class="star" href="https://github.com/hacksmo/workbuddy-remote" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+        <span>Star</span>
+        <em class="cnt" hidden></em>
+      </a>
     </div>
+    <p class="author-note">一个人维护。觉得有用就点个 star，这是我唯一能看到反馈的地方。</p>
   </div>
 </section>
 
-<section class="sec">
+<section class="sec sec-note">
   <div class="wrap">
     <p class="caveat">它依赖桌面端留的调试入口。官方封掉这个入口、或者自己做了桌面版远程，这个项目就没用了。另外官方设置里也有一个叫 <code>WorkBuddy Remote</code> 的插件，那是给手机远程做授权的，同名但无关。</p>
   </div>
@@ -175,11 +180,37 @@ document.querySelector('.copy')?.addEventListener('click', function () {
   if (t) location.replace('/app?token=' + encodeURIComponent(t));
 })();
 
+/* 命令条只有在真的放不下时才显示右侧渐隐。
+   桌面端整条命令是 713px、容器也是 713px，无条件画遮罩会把
+   结尾的 `| bash` 盖住一半，看起来像命令被截断了。 */
+(function () {
+  var sc = document.querySelector('.cmd-scroll');
+  var code = sc && sc.querySelector('code');
+  if (!code) return;
+  var sync = function () { sc.classList.toggle('scrollable', code.scrollWidth > code.clientWidth + 1); };
+  sync(); addEventListener('resize', sync);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(sync);
+})();
+
 /* 导航滚动时加背景 */
 (function () {
   var nav = document.querySelector('nav.top');
   var on = function () { nav.classList.toggle('scrolled', window.scrollY > 12); };
   on(); addEventListener('scroll', on, { passive: true });
+})();
+
+/* star 数。拿不到、或者还是 0 就不显示数字 —— 新仓库挂个「0」比不挂更难看。
+   走 GitHub 公开 API，有 60 次/小时的限流，失败是常态，所以静默降级。 */
+(function () {
+  var el = document.querySelector('.star .cnt');
+  if (!el) return;
+  fetch('https://api.github.com/repos/hacksmo/workbuddy-remote', {
+    headers: { Accept: 'application/vnd.github+json' }
+  }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+    if (!d || !d.stargazers_count) return;
+    el.textContent = d.stargazers_count;
+    el.hidden = false;
+  }).catch(function () {});
 })();
 </script>
 </body>
