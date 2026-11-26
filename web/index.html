@@ -164,6 +164,27 @@
   #lightbox.on{display:flex}
   #lightbox img{max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 20px 60px #000a}
   .state{font-size:11px;color:var(--muted);margin-top:8px}
+  /* ── 排队消息卡片 ───────────────────────────────────────────
+     生成中再发的消息进队列，显示在输入框正上方（与桌面端一致）。
+     会话跑完自动依次发出，可拖动排序 / 编辑 / 删除。 */
+  .dqueue{max-width:820px;margin:0 auto 8px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);overflow:hidden}
+  .dq-h{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .dq-h .t{font-size:11px;color:var(--muted);flex:1}
+  .dq-h .t b{color:var(--text);font-weight:600}
+  .dq-h button{padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer;font-size:10.5px}
+  .dq-h button:hover{border-color:var(--del-line);color:var(--del-fg)}
+  .dq-item{display:flex;align-items:flex-start;gap:8px;padding:8px 11px;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+  .dq-item:last-child{border-bottom:none}
+  .dq-item.dragging{opacity:.4}
+  .dq-item.over{box-shadow:inset 0 2px 0 var(--accent)}
+  .dq-item .grip{flex-shrink:0;width:12px;color:var(--muted);cursor:grab;font-size:12px;line-height:1.6;user-select:none;opacity:.55}
+  .dq-item .grip:hover{opacity:1}
+  .dq-item .body{flex:1;min-width:0;font-size:calc(12.5px / var(--zoom,1));line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+  .dq-item .body .dq-img{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-radius:5px;font-size:10.5px;color:var(--muted);margin-top:3px}
+  .dq-item .n{flex-shrink:0;font-size:10px;color:var(--muted);opacity:.6;line-height:1.9}
+  .dq-item button{flex-shrink:0;width:22px;height:22px;border:none;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;padding:0}
+  .dq-item button:hover{background:var(--hover);color:var(--text)}
+  .dq-item button.del:hover{background:#3a2227;color:#ff9aa2}
   .state.working{color:var(--accent)}
   .state.error{color:#f26d6d}
 
@@ -307,7 +328,7 @@
 <script>
 if (/Linux/.test(navigator.platform || '')) document.documentElement.classList.add('is-linux');
 const $ = (s) => document.querySelector(s);
-const state = { sessions: [], spaces: [], current: null, timer: null, models: [], lastSig: '', running: false, polling: false, messages: [], total: null, debounce: null, es: null, lastPollAt: 0, stick: true, _ro: null };
+const state = { sessions: [], spaces: [], current: null, timer: null, models: [], lastSig: '', running: false, polling: false, messages: [], total: null, debounce: null, es: null, lastPollAt: 0, stick: true, _ro: null, queue: null };
 let SHOW_THINK = localStorage.getItem('wb.showThink') === '1';
 const RUNNING_STATES = new Set(['streaming', 'working', 'running', 'pending', 'queued', 'starting']);
 const isRunning = (s) => RUNNING_STATES.has(String(s || ''));
@@ -776,6 +797,7 @@ function renderMessages(reqs) {
 
     wrap.appendChild(sec);
   }
+  // 排队卡片挂在输入框上方（队列是「还没发出去」的部分，不属于消息流）
   box.appendChild(wrap);
   // 用 ResizeObserver 跟随后续高度变化（展开思考块 / 图片解码 / 字体回流），
   // 并补两帧 + 一次延时兜底，覆盖首屏图片尚未拿到尺寸的情况。
@@ -789,14 +811,28 @@ function renderMessages(reqs) {
 
 function updateSendBtn() {
   const btn = $('#send');
+  const ta = $('#input');
+  const hasText = ta.value.trim().length > 0 || pendingImages.length > 0;
+
   if (state.running) {
-    btn.textContent = '停止';
-    btn.classList.add('stop');
-    btn.disabled = false;
+    // 生成期间：有内容时按钮是「排队发送」（桌面端行为），
+    // 空内容时才是「停止」——否则用户没法中断又没法追加
+    if (hasText) {
+      btn.textContent = '排队';
+      btn.classList.remove('stop');
+      btn.disabled = false;
+      btn.title = '当前回复结束后自动发送';
+    } else {
+      btn.textContent = '停止';
+      btn.classList.add('stop');
+      btn.disabled = false;
+      btn.title = '中断当前回复';
+    }
   } else {
     btn.textContent = '发送';
     btn.classList.remove('stop');
-    btn.disabled = !state.current;
+    btn.disabled = !state.current || !hasText;
+    btn.title = '';
   }
 }
 
@@ -870,6 +906,8 @@ async function pollMessages(full) {
     state.running = items.some((r) => isRunning(r.state));
     updateSendBtn();
     renderMessages(items);
+    // 刚生成完 → 若有排队消息，接着发下一条
+    if (!state.running) drainQueue();
   } catch (e) {
     $('#hintText').textContent = /生成|超时/.test(e.message) ? '会话正在生成，稍后自动刷新' : '读取失败：' + e.message;
   } finally {
@@ -883,6 +921,7 @@ async function openSession(id) {
   state.lastSig = '';
   state.messages = [];
   state.total = null;
+  renderQueueCard();
   // 切会话一律从底部开始看。若不重置，新会话初始 scrollTop=0 会被
   // atBottom() 判成「用户在看历史」，于是停在顶部。
   state.stick = true;
@@ -923,24 +962,215 @@ async function openSession(id) {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  排队消息
+// ══════════════════════════════════════════════════════════════════
+// 桌面端的行为是：会话正在生成时，输入框仍可发送，消息进队列，等当前
+// 回复结束后依次发出；队列显示成卡片，可以拖动排序、编辑、删除。
+//
+// 网页端原来做不到这件事 —— 生成期间发送按钮直接变成「停止」，用户
+// 想追加一句只能等。这里用纯前端的乐观队列实现同样的体验：
+//   · 队列存在 localStorage，按会话隔离，刷新不丢
+//   · 记住会话 id，切换回来还在
+//   · 不依赖 WorkBuddy 内部 API，所以升级桌面端也不会坏
+const QUEUE_KEY = 'wb.queue';
+
+function loadQueues() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '{}') || {}; } catch { return {}; }
+}
+function saveQueues(all) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(all)); } catch {}
+}
+function curQueue() {
+  const sid = state.current?.id;
+  if (!sid) return [];
+  return loadQueues()[sid] || [];
+}
+function setCurQueue(items) {
+  const sid = state.current?.id;
+  if (!sid) return;
+  const all = loadQueues();
+  if (items.length) all[sid] = items;
+  else delete all[sid];
+  saveQueues(all);
+  renderQueueCard();
+}
+function enqueue(item) {
+  const items = curQueue();
+  items.push(item);
+  setCurQueue(items);
+}
+
+// 生成结束 → 自动发队首。一次只发一条，发完等状态变 idle 再来。
+let draining = false;
+async function drainQueue() {
+  if (draining || state.running || !state.current) return;
+  const items = curQueue();
+  if (!items.length) return;
+  draining = true;
+  const [next, ...rest] = items;
+  setCurQueue(rest);
+  try {
+    await api(`/sessions/${encodeURIComponent(state.current.id)}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blocks: next.blocks }),
+    });
+    state.stick = true;
+    await pollMessages();
+  } catch (e) {
+    // 发不出去就塞回队首，别让用户的消息凭空消失
+    setCurQueue([next, ...curQueue()]);
+    toast('排队消息发送失败：' + (e && e.message ? e.message : e));
+  } finally {
+    draining = false;
+  }
+}
+
+// 队列卡片：挂在输入框正上方，跟桌面端位置一致
+function renderQueueCard() {
+  let card = $('#dqueue');
+  const items = curQueue();
+  if (!items.length) {
+    if (card) card.remove();
+    return;
+  }
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'dqueue';
+    card.className = 'dqueue';
+    const wrap = document.querySelector('.composer-wrap');
+    if (wrap) wrap.insertBefore(card, wrap.firstChild);
+    else $('#input')?.parentElement?.parentElement?.prepend(card);
+  }
+  card.textContent = '';
+
+  const h = document.createElement('div');
+  h.className = 'dq-h';
+  const t = document.createElement('span');
+  t.className = 't';
+  t.innerHTML = '<b>排队中</b> · 当前回复结束后自动依次发送';
+  h.appendChild(t);
+  const clear = document.createElement('button');
+  clear.textContent = '清空';
+  clear.title = '清空队列';
+  clear.onclick = () => setCurQueue([]);
+  h.appendChild(clear);
+  card.appendChild(h);
+
+  items.forEach((it, idx) => {
+    const row = document.createElement('div');
+    row.className = 'dq-item';
+    row.draggable = true;
+    row.dataset.index = String(idx);
+
+    const grip = document.createElement('span');
+    grip.className = 'grip';
+    grip.textContent = '⋮⋮';
+    grip.title = '拖动排序';
+    row.appendChild(grip);
+
+    const body = document.createElement('div');
+    body.className = 'body';
+    const text = (it.blocks || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const imgs = (it.blocks || []).filter((b) => b.type === 'image');
+    if (text) body.appendChild(document.createTextNode(text));
+    for (const im of imgs) {
+      const d = document.createElement('span');
+      d.className = 'dq-img';
+      d.textContent = '🖼 ' + ((im._meta && im._meta.filename) || '图片');
+      body.appendChild(d);
+    }
+    if (!text && !imgs.length) body.textContent = '(空消息)';
+    row.appendChild(body);
+
+    const n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = '#' + (idx + 1);
+    row.appendChild(n);
+
+    // 编辑：把内容放回输入框，从队列里摘掉
+    const edit = document.createElement('button');
+    edit.textContent = '✎';
+    edit.title = '编辑（放回输入框）';
+    edit.onclick = () => {
+      const ta = $('#input');
+      ta.value = text;
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 190) + 'px';
+      ta.focus();
+      const rest = curQueue();
+      rest.splice(idx, 1);
+      setCurQueue(rest);
+    };
+    row.appendChild(edit);
+
+    const del = document.createElement('button');
+    del.className = 'del';
+    del.textContent = '×';
+    del.title = '删除';
+    del.onclick = () => {
+      const rest = curQueue();
+      rest.splice(idx, 1);
+      setCurQueue(rest);
+    };
+    row.appendChild(del);
+
+    // 拖拽排序
+    row.ondragstart = (e) => {
+      e.dataTransfer.setData('text/plain', String(idx));
+      e.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    };
+    row.ondragend = () => row.classList.remove('dragging');
+    row.ondragover = (e) => { e.preventDefault(); row.classList.add('over'); };
+    row.ondragleave = () => row.classList.remove('over');
+    row.ondrop = (e) => {
+      e.preventDefault();
+      row.classList.remove('over');
+      const from = Number(e.dataTransfer.getData('text/plain'));
+      if (Number.isNaN(from) || from === idx) return;
+      const arr = curQueue();
+      const [moved] = arr.splice(from, 1);
+      arr.splice(idx, 0, moved);
+      setCurQueue(arr);
+    };
+
+    card.appendChild(row);
+  });
+}
+
 async function send() {
   const ta = $('#input');
   const text = ta.value.trim();
   if ((!text && !pendingImages.length) || !state.current) return;
+
+  const blocks = [];
+  if (text) blocks.push({ type: 'text', text });
+  for (const img of pendingImages) {
+    blocks.push({
+      type: 'image',
+      data: img.b64,
+      mimeType: img.mimeType,
+      _meta: { displayAsPhrase: true, mentionType: 'file', type: 'file', icon: 'file', filename: img.name },
+    });
+  }
+
+  // 正在生成 → 进队列，不打断当前回复（桌面端就是这个行为）
+  if (state.running) {
+    enqueue({ blocks, at: Date.now() });
+    ta.value = '';
+    ta.style.height = 'auto';
+    pendingImages = [];
+    renderAttach();
+    toast('已加入队列，当前回复结束后发送');
+    return;
+  }
+
   ta.value = '';
   ta.style.height = 'auto';
   $('#send').disabled = true;
   try {
-    const blocks = [];
-    if (text) blocks.push({ type: 'text', text });
-    for (const img of pendingImages) {
-      blocks.push({
-        type: 'image',
-        data: img.b64,
-        mimeType: img.mimeType,
-        _meta: { displayAsPhrase: true, mentionType: 'file', type: 'file', icon: 'file', filename: img.name },
-      });
-    }
     await api(`/sessions/${encodeURIComponent(state.current.id)}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1185,7 +1415,12 @@ $('#q').oninput = renderList;
 $('#msgs').addEventListener('scroll', () => {
   state.stick = atBottom($('#msgs'));
 }, { passive: true });
-$('#send').onclick = () => (state.running ? stopRun() : send());
+$('#send').onclick = () => {
+  // 生成期间：输入框有内容 → 排队；空 → 停止。与按钮文案一致。
+  const hasText = $('#input').value.trim().length > 0 || pendingImages.length > 0;
+  if (state.running && !hasText) return stopRun();
+  return send();
+};
 $('#input').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter') return;
   // 输入法组字期间的回车是在选词，不能当成发送
@@ -1202,10 +1437,12 @@ $('#input').addEventListener('input', (e) => {
   const t = e.target;
   t.style.height = 'auto';
   t.style.height = Math.min(t.scrollHeight, 190) + 'px';
+  updateSendBtn();  // 生成期间按钮要在「排队 / 停止」之间切换
 });
 
 (async () => {
   probeNet();  // 不 await：链路标识不该拖慢首屏
+  renderQueueCard();  // 上次没发完的排队消息
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
     renderList();
