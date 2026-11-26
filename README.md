@@ -306,7 +306,10 @@ rm -f ~/.local/share/applications/workbuddy-remote.desktop \
       ~/.local/share/icons/hicolor/512x512/apps/workbuddy-remote.png \
       ~/.local/bin/workbuddy
 rm -rf ~/.local/share/workbuddy-remote/client-profile
+rm -f ~/.config/workbuddy-remote/lan-endpoint
 ```
+
+别忘了局域网探测的缓存 `~/.config/workbuddy-remote/lan-endpoint`（一行，记录上次连通的地址）。
 
 ## 安全提醒
 
@@ -318,6 +321,65 @@ rm -rf ~/.local/share/workbuddy-remote/client-profile
 - 令牌走 URL 参数，会留在浏览器历史里。公用设备建议手动换成更长的随机串
 - 公网暴露时一定要设令牌，并且**不要**用 `WB_HOST=0.0.0.0`（那会监听所有网卡，
   包括未来的新网络）—— 用默认的 auto 或显式写 IP
+
+## 国内网络下的安装问题
+
+在 Ubuntu 24.04 上实测：`cdn.jsdelivr.net` 和 `raw.githubusercontent.com` 都会在
+TLS 握手阶段被重置（`curl: (35) Recv failure: Connection reset by peer`）。
+这影响的是**图标下载**，不影响主体功能 —— 装完能正常用，只是图标会退回内嵌的
+128px 版本（肉眼可见变糊）。
+
+安装脚本已经内置了一串镜像，按命中率排序，逐个试：
+
+```
+cdn.jsdelivr.net  →  ghproxy.net  →  gh-proxy.com
+                  →  raw(sha)     →  raw(main)     →  ghfast.top
+```
+
+实测 `ghproxy.net` 和 `gh-proxy.com` 都可用（HTTP 200），`ghfast.top` 会超时。
+每个源最多等 8 秒，全失败才用内嵌兜底图。
+
+如果脚本跑到下载那步报 `curl: (35)`，说明当前网络这几个域名都不通。三种处理：
+
+```bash
+# 1. 挂着代理装（脚本会继承环境变量）
+https_proxy=http://127.0.0.1:7890 bash install.sh --client '...'
+
+# 2. 自己指定图标地址（放到能访问的地方）
+WB_ICON_URL='https://你的地址/icon-512.png' bash install.sh --client '...'
+
+# 3. 干脆不管 —— 图标糊一点，功能完全正常
+```
+
+装完想补高清图标也可以直接覆盖（Linux）：
+
+```bash
+curl -fsSL 'https://ghproxy.net/https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/icon-512.png' \
+  -o ~/.local/share/icons/hicolor/512x512/apps/workbuddy-remote.png
+gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+```
+
+## 常见问题
+
+**启动后在应用菜单里点了没反应（Linux）**
+用终端跑一次 `~/.local/bin/workbuddy` 看输出。常见原因是找不到 Chrome ——
+脚本支持 Chrome / Edge / Brave / Chromium，都没有时会退回系统默认浏览器。
+另外 `~/.local/bin` 不在 PATH 里不影响图标启动（`.desktop` 用的是绝对路径）。
+
+**图标点了打开的是白屏**
+说明连上了但页面挂了。看一眼 `http://<被控端>:8797/health` 是否返回
+`{"ok":true}`；再看看被控端的 `~/.config/workbuddy-remote/logs/bridge.log`。
+
+**SSH 里起的图形程序一断开就没了**
+`nohup ... &` 会被会话结束带走，用 `setsid`：
+
+```bash
+setsid gtk-launch workbuddy-remote </dev/null >/tmp/wb.log 2>&1 &
+```
+
+**Ubuntu 空闲后自动锁屏，远程看不到窗口**
+`loginctl unlock-session <id>`（先用 `loginctl list-sessions --no-legend` 找 seat0 那个）。
+截图可以用 `import -window root /tmp/shot.png`（ImageMagick）。
 
 ## 已知限制
 
