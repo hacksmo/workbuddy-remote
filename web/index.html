@@ -304,7 +304,16 @@
     html.nav-open #app>aside{transform:none}
     /* 抽屉里不存在 hover，删除按钮常显，否则手机上永远点不到 */
     .item .del{opacity:.75}
-    main header{padding:0 10px 0 6px;gap:7px;height:50px;padding-top:env(safe-area-inset-top)}
+    /* 高度必须把安全区**加**进去，不能用 height:50px + padding-top:env()。
+       全站 *{box-sizing:border-box}，两者一叠加，padding 吃掉的是 height
+       里的空间：iPhone 全屏（PWA）时 safe-area-inset-top 是 47~59px，
+       50px 的 header 内容区直接剩 0，标题和模型下拉框只露出下半截。
+       浏览器里看不到 —— 有地址栏时 safe-area 很小，正好没踩到边界。
+       用 calc(基础高 + 安全区) 表达「安全区是在 50px 之上额外让出来的」。 */
+    main header{padding:0 10px 0 6px;gap:7px;
+          height:50px;
+          height:calc(50px + env(safe-area-inset-top));
+          padding-top:env(safe-area-inset-top)}
     main header .zoom,main header .top-sep{display:none}
     /* min-width:0 是关键：flex 子项默认 min-width:auto，标题再长也不会收缩，
        会把右边的模型下拉框顶出屏幕外。 */
