@@ -1693,27 +1693,42 @@ const termState = {
 };
 let termUid = 0;
 
-/** 首次打开终端时才拉 xterm.js —— 290KB 不该让所有人付 */
+/** 首次打开终端时才拉 xterm.js —— 290KB 不该让所有人付。
+ *
+ *  三个资源**并行**拉，不是串行 await。这不是洁癖：
+ *  公网访问时每个请求要经过 nginx → SSH 隧道 → 工作机，单程 300ms 起，
+ *  实测单个响应 TTFB 1.7s。串行拉三个就是 5s+，用户点开终端盯五秒白屏，
+ *  会以为坏了。并行之后总耗时约等于最慢的那个。
+ */
 function loadTermLibs() {
   if (termState.libs) return termState.libs;
   termState.libs = new Promise((resolve, reject) => {
-    const css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = '/vendor/xterm.css';
-    document.head.appendChild(css);
+    const jobs = [];
 
-    const add = (src) => new Promise((ok, no) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = ok;
-      s.onerror = () => no(new Error('加载失败: ' + src));
-      document.head.appendChild(s);
-    });
-    add('/vendor/xterm.js')
-      .then(() => add('/vendor/addon-fit.js'))
-      .then(() => resolve())
-      .catch(reject);
+    jobs.push(new Promise((ok, no) => {
+      const css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = '/vendor/xterm.css';
+      css.onload = ok;
+      // 样式拉不到不该让整个终端打不开，终端还是能用的
+      css.onerror = ok;
+      document.head.appendChild(css);
+    }));
+
+    for (const src of ['/vendor/xterm.js', '/vendor/addon-fit.js']) {
+      jobs.push(new Promise((ok, no) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = ok;
+        s.onerror = () => no(new Error('加载失败: ' + src));
+        document.head.appendChild(s);
+      }));
+    }
+
+    Promise.all(jobs).then(() => resolve()).catch(reject);
   });
+  // 失败了要允许重试，否则一次网络抖动就永远打不开
+  termState.libs.catch(() => { termState.libs = null; });
   return termState.libs;
 }
 
@@ -2133,6 +2148,14 @@ addEventListener('keydown', (e) => {
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
     renderList();
+
+    // 首屏稳定后空转时预取 xterm.js。经隧道拉 70KB 要三秒多，等用户
+    // 真去点终端才拉，他得盯着「加载终端组件…」三秒。反正迟早要用，
+    // 趁浏览器 idle 先把字节搬过来。加载失败不处理 —— 点击时 loadTermLibs
+    // 会重试。
+    const prefetch = () => { loadTermLibs().catch(() => {}); };
+    if ('requestIdleCallback' in window) requestIdleCallback(prefetch, { timeout: 4000 });
+    else setTimeout(prefetch, 2500);
     // focus 模式优先打开指定会话
     if (FOCUS) {
       await openSession(FOCUS);
