@@ -1103,15 +1103,28 @@ function renderQueueCard() {
     n.textContent = '#' + (idx + 1);
     row.appendChild(n);
 
-    // 立即发送：打断当前回复，优先发这条
+    // 引导会话：把这条插进当前正在跑的这一轮，模型不会中断
+    // （和桌面端排队项的「引导会话」按钮同一个 API：queueManager.sendNow）
     const now = document.createElement('button');
-    now.textContent = '▶';
-    now.title = '立即发送（打断当前回复）';
-    now.onclick = () => {
-      if (!confirm('立即发送会中断当前回复，确定吗？')) return;
-      queueOp('sendNow', it.id);
-    };
+    now.textContent = '➤';
+    now.title = '引导会话，消息将被发出但模型不会中断';
+    now.onclick = () => queueOp('sendNow', it.id);
     row.appendChild(now);
+
+    // 编辑：把内容取回输入框，同时从队列里删掉（等价于桌面端的铅笔按钮）
+    const edit = document.createElement('button');
+    edit.textContent = '✎';
+    edit.title = '编辑（取回输入框，并从队列移除）';
+    edit.onclick = () => {
+      const ta = $('#input');
+      if (!ta) return;
+      ta.value = text;
+      ta.style.height = 'auto';
+      ta.style.height = Math.min(ta.scrollHeight, 190) + 'px';
+      ta.focus();
+      queueOp('delete', it.id);
+    };
+    row.appendChild(edit);
 
     const del = document.createElement('button');
     del.className = 'del';
