@@ -92,7 +92,12 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
 .arrow:hover { color: var(--tx) }
 
 /* ---------- hero ---------- */
-.hero { position: relative; padding: 148px 0 0; text-align: center }
+/* overflow:hidden 是必须的。两块极光是 1000px / 760px 的大圆，
+   用负偏移推到容器外面；不裁的话它们会把 documentElement.scrollWidth
+   撑到 954px（390 的屏），部分移动浏览器因此允许整页左右拖，
+   表现为「稍微一碰就滑走」。body 上的 overflow-x:hidden 只管视觉，
+   不影响 scrollWidth，别指望它。 */
+.hero { position: relative; padding: 148px 0 0; text-align: center; overflow: hidden }
 
 /* 极光：两块大半径柔光，慢慢飘。给深色底一点空间感，
    不抢内容——所以不透明度压得很低，最亮处也只有 .5。 */
@@ -131,6 +136,12 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
   max-width: 620px; margin: 20px auto 0;
   color: var(--mu); font-size: 16px; line-height: 1.75;
 }
+/* 副标题里那个 <br class="wide"> 只在宽屏断行。
+   窄屏留着它，最后一行会只剩五六个字，配上居中对齐很难看。
+   让它在窄屏失效，文字自然回流即可。 */
+@media (max-width: 700px) {
+  .sub br.wide { display: none }
+}
 
 .cta { margin-top: 30px; display: flex; flex-direction: column; align-items: center; gap: 16px }
 .cta .row {
@@ -161,6 +172,13 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
 }
 .cmd code {
   display: block;
+  /* min-width 和 max-width 缺一不可。
+     code 是块级元素，内容 nowrap 会把它的宽度撑到整条命令的长度（407px），
+     撑破父级 .cmd-scroll，进而把整个页面的 scrollWidth 顶大。
+     手机上表现为「页面能左右滑一点」，本地测试时因为字体加载快没复现，
+     一直到线上才看见 415 > 390。 */
+  min-width: 0;
+  max-width: 100%;
   background: none; padding: 0; font-size: 12.5px; color: #b9c4d6;
   white-space: nowrap; overflow-x: auto; scrollbar-width: none;
 }
@@ -314,6 +332,9 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
   box-shadow: 0 40px 110px -50px rgba(59, 106, 224, .55);
 }
 .shot img { width: 100%; height: auto }
+.shot a { display: block; line-height: 0 }
+/* 提示只在窄屏出现。桌面上截图本来就是 1400px 铺满，不需要点开。 */
+.shot-hint { display: none }
 
 /* ---------- 对比表 ---------- */
 .table {
@@ -394,18 +415,75 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
 .f-note p { font-size: 12.5px; color: var(--mu2) }
 
 /* ---------- 窄屏 ---------- */
-@media (max-width: 860px) {
+/* 501–860：平板 / 窄窗口。
+   示意图在这里保持横排 —— 768px 放两个 220px 的节点加一条线绰绰有余，
+   竖排会把首屏拉得很长，还要多滚一屏才能看到事实条。
+   只有真正的手机宽度（<=500）才转竖排。 */
+@media (max-width: 860px) and (min-width: 501px) {
   .links { display: none }
-  .hero { padding-top: 116px }
+  .hero { padding-top: 108px }
+  .facts ul { grid-template-columns: 1fr 1fr }
+  .facts li { border-left: 0; padding-left: 0; border-top: 1px solid var(--line) }
+  .facts li:nth-child(-n+2) { border-top: 0 }
+  .facts li:nth-child(even) { padding-left: 18px; border-left: 1px solid var(--line) }
+  .steps { grid-template-columns: 1fr }
+  .cards { grid-template-columns: 1fr }
+  .tr.th { display: none }
+  .tr { grid-template-columns: 1fr; padding: 16px 0 }
+  .tr > span { padding: 2px 0; font-size: 13px }
+  .tr > span:first-child { font-size: 11.5px; color: var(--mu2); letter-spacing: .04em; margin-bottom: 6px }
+  .tr .good::before { width: auto; height: auto; border-radius: 0; background: none }
+  .tr > span:nth-child(2)::before { content: "远程桌面 · "; color: var(--mu2) }
+  .tr > span:nth-child(3)::before { content: "这个项目 · "; color: var(--mu2) }
+  footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px }
+}
+
+@media (max-width: 560px) {
+  .wrap { padding: 0 18px }
+  .cmd { padding: 10px; gap: 8px; width: 100% }
+  /* 12.5px 在手机上不好读，而且这条命令是唯一入口，不该缩到次要。
+     11px 那版截图里已经糊成一片，加到 12px 并缩小左右内边距换空间。 */
+  .cmd code { font-size: 12px }
+  .cmd .cmd-scroll::after { width: 44px }
+  .cta .row { gap: 14px }
+  .sec { padding-top: 72px }
+  .facts { padding-top: 60px }
+  .honest > .wrap { padding-left: 16px }
+}
+
+@media (max-width: 500px) {
+  .links { display: none }
+  .hero { padding-top: 108px }
+
+  /* 截图收一下：手机上一张 1400px 宽的桌面截图缩到 350px 后，
+     里面的字一个也看不清。所以给它一个可点的大图入口 + 一行提示。
+     不删这张图是因为「长什么样」是访客最想知道的事之一。 */
+  .shot { border-radius: 10px }
+  .shot-hint {
+    display: block; text-align: center;
+    font-size: 12px; color: var(--mu2); margin-top: 10px;
+  }
+
+  /* 示意图竖排。
+     原来两个窗口缩略是高度 62px 的横条，竖排后显得又扁又空，
+     上下留白加起来比内容还高。窄屏下把框压矮、间距收紧，
+     让它读起来像两个节点而不是两块空白。 */
   .diagram {
     grid-template-columns: 1fr;
-    gap: 18px; padding: 26px 20px;
+    gap: 0; padding: 22px 16px;
   }
-  /* 竖排时线要变成纵向，光点也跟着改成上下跑 */
+  .diagram .node b { margin-top: 9px; font-size: 14px }
+  .diagram .win-mini { height: 44px; padding: 7px 9px }
+
+  /* 标签改成绝对定位后不再撑高 .wire，这里补回一点，避免贴住上下两个框 */
+  .wire { padding: 16px 0 }
   .wire-line {
-    width: 1px; height: 34px; margin: 0 auto;
-    background: linear-gradient(180deg, transparent, rgba(109, 155, 255, .55) 20%, rgba(109, 155, 255, .55) 80%, transparent);
+    width: 1px; height: 26px; margin: 0 auto;
+    background: linear-gradient(180deg, rgba(109, 155, 255, .18), rgba(109, 155, 255, .8) 22%, rgba(109, 155, 255, .8) 78%, rgba(109, 155, 255, .18));
   }
+  /* 竖排时两端的圆点要挪到上下两端，横排那套 left/right 定位会跑到框外 */
+  .wire-line::before { left: 50%; top: -2px; transform: translateX(-50%) }
+  .wire-line::after  { left: 50%; top: auto; bottom: -2px; right: auto; transform: translateX(-50%) }
   .wire-line .pulse {
     top: 0; left: -2px;
     animation: run-down 2.6s cubic-bezier(.5, 0, .5, 1) infinite;
@@ -416,12 +494,43 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
     85% { opacity: 1 }
     100% { top: 92%; opacity: 0 }
   }
-  .wire-tag { margin-top: 10px; font-size: 11px }
+  /* 竖排时标签压在中间会打断连线，改成贴在线的右侧 */
+  .wire-tag {
+    margin-top: 0;
+    position: absolute; left: calc(50% + 16px); top: 50%;
+    transform: translateY(-50%);
+    align-items: flex-start;
+  }
+  .wire-tag b { font-size: 13px }
+  .wire-tag em { font-size: 10px }
 
-  .facts ul { grid-template-columns: 1fr 1fr }
-  .facts li { border-left: 0; padding-left: 0; border-top: 1px solid var(--line) }
+  /* 窄屏两列时，只给「内容真正铺满」的情况画中间竖线。
+     桌面端靠 border-left + padding-left 撑出间距，但窄屏右列文字短、
+     单元格高度不一致时，那条线会显得贴在左列末尾，读起来像错位。
+     改成用 gap + 伪元素画线，线始终待在两格正中。 */
+  .facts ul {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 22px;
+    /* 用 gap 取代 border 之后，外框的上下线要自己补回来 */
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .facts li {
+    border-left: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0;
+    border-top: 1px solid var(--line);
+  }
   .facts li:nth-child(-n+2) { border-top: 0 }
-  .facts li:nth-child(even) { padding-left: 18px; border-left: 1px solid var(--line) }
+  /* 右列不再靠自己画左边框，改成整行加一条中线。
+     上下各留 22px 是因为 li 的 padding 就是 22px 上 / 24px 下，
+     让线从文字顶对齐到文字底，不穿过分隔线。 */
+  .facts li:nth-child(even) { position: relative }
+  .facts li:nth-child(even)::before {
+    content: ""; position: absolute;
+    left: -11px; top: 22px; bottom: 24px; width: 1px;
+    background: var(--line);
+  }
 
   .steps { grid-template-columns: 1fr }
   .cards { grid-template-columns: 1fr }
@@ -437,6 +546,13 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
     font-size: 11.5px; color: var(--mu2);
     letter-spacing: .04em; margin-bottom: 6px;
   }
+  /* 这里必须把 .good::before 的 width 放回 auto。
+     桌面端那个点是 4px 的空圆圈，靠 width/height 撑出来的；
+     窄屏改成塞「这个项目 · 」四个字，选择器权重更高的这条规则
+     只覆盖了 content，没覆盖 width —— 于是文字被压在 4px 宽的盒子里，
+     一个字一行，整列竖排。这是移动端最难看的一处。 */
+  .tr .good { color: #c8d6ef }
+  .tr .good::before { width: auto; height: auto; border-radius: 0; background: none; }
   .tr > span:nth-child(2)::before { content: "远程桌面 · "; color: var(--mu2) }
   .tr > span:nth-child(3)::before { content: "这个项目 · "; color: var(--mu2) }
 
@@ -444,23 +560,11 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
   .f-right { gap: 18px }
 }
 
-@media (max-width: 560px) {
-  .wrap { padding: 0 18px }
-  .hero { padding-top: 104px }
-  .cmd { padding: 10px; gap: 8px; width: 100% }
-  /* 12.5px 在手机上不好读，而且这条命令是唯一入口，不该缩到次要。
-     11px 那版截图里已经糊成一片，加到 12px 并缩小左右内边距换空间。 */
-  .cmd code { font-size: 12px }
-  .cmd .cmd-scroll::after { width: 44px }
-  .cta .row { gap: 14px }
-  .sec { padding-top: 72px }
-  .facts { padding-top: 60px }
-  .honest > .wrap { padding-left: 16px }
-}
-
 @media (max-width: 380px) {
   .hero h1 { font-size: 23px }
-  .wire-tag { font-size: 10px }
+  /* 320 这种极窄屏，标签贴在连线右侧会顶到容器边缘，缩小并收紧偏移 */
+  .wire-tag { left: calc(50% + 12px) }
+  .wire-tag b { font-size: 12px }
 }
 
 @media (prefers-reduced-motion: reduce) {
