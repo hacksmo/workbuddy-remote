@@ -566,13 +566,40 @@ async function api(path, opts = {}) {
   if (t) headers['Authorization'] = 'Bearer ' + t;
   const r = await fetch(path, Object.assign({}, opts, { headers }));
   if (r.status === 401) {
-    $('#auth').classList.add('show');
-    setTimeout(() => $('#authInput').focus(), 30);
-    throw new Error('需要访问密码');
+    showAuth();
+    // 这个错误只用来打断当前调用链，不该被当成「网络故障」弹 toast。
+    // 调用方用 isAuthError() 区分：首次打开没带 token 是**正常流程**，
+    // 不是错误 —— 输入令牌就进得去。见 boot 里的 catch。
+    const e = new Error('需要访问密码');
+    e.authRequired = true;
+    throw e;
   }
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.ok === false) throw new Error(j.error || ('HTTP ' + r.status));
   return j.value !== undefined ? j.value : j;
+}
+
+const isAuthError = (e) => !!(e && e.authRequired);
+
+const AUTH_TIP = '这个桥接服务已开启鉴权，请输入启动时设置的令牌。';
+
+/** 弹出令牌输入框。首次访问、换令牌、令牌失效都走这里。 */
+function showAuth(tip) {
+  const box = $('#auth');
+  box.classList.add('show');
+  const p = box.querySelector('p');
+  // 只有显式传 tip 才改文案。不传就保持原样 —— 这一点很重要：
+  // 一次进入会并发三个请求（sessions/spaces/models），归一化的
+  // 「令牌不正确」提示会被后两个的裸 showAuth() 覆盖掉，
+  // 用户就又看不到错在哪了。
+  if (p && tip) p.textContent = tip;
+  setTimeout(() => $('#authInput').focus(), 30);
+}
+
+/** 清掉可能残留的错误提示，回到首次访问的默认文案。 */
+function resetAuthTip() {
+  const p = $('#auth').querySelector('p');
+  if (p) p.textContent = AUTH_TIP;
 }
 
 function fmtTime(ts) {
@@ -1485,13 +1512,32 @@ $('#model').onchange = async (e) => {
 $('#authBtn').onclick = async () => {
   const v = $('#authInput').value.trim();
   if (!v) return;
+  const btn = $('#authBtn');
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '验证中…';
+  resetAuthTip();   // 先清掉上一次的「令牌不正确」，验证期间别挂着旧错误
   localStorage.setItem('wb.token', v);
-  $('#auth').classList.remove('show');
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
+    $('#auth').classList.remove('show');
     renderList();
-    if (state.sessions[0]) openSession(state.sessions[0].id);
-  } catch (e) { toast(e.message); }
+    const first = state.sessions.find((x) => (x.title || '').trim()) || state.sessions[0];
+    if (first) openSession(first.id);
+  } catch (e) {
+    // 令牌错了要**留在框里**并说清楚，不能把框关掉再弹个「需要访问密码」
+    // ——用户会以为自己刚才没输对地方，来回试。
+    if (isAuthError(e)) {
+      $('#authInput').select();
+      showAuth('令牌不正确，请检查启动日志里的 WB_TOKEN。');
+    } else {
+      $('#auth').classList.remove('show');
+      toast(e.message);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
 };
 $('#authInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#authBtn').click(); });
 
@@ -2186,6 +2232,14 @@ addEventListener('keydown', (e) => {
 
 (async () => {
   probeNet();  // 不 await：链路标识不该拖慢首屏
+  // 第一次在手机/新设备上打开，本地没有令牌，一进来必定 401。
+  // 这是**预期内的流程**，不是故障：直接给输入框，别弹「连接失败」。
+  // 早先这里统一走 toast，手机用户看到「连接失败…如果走代理」会以为
+  // 是网络坏了，去折腾代理设置，而其实只要输一次令牌。
+  if (!getToken()) {
+    showAuth();
+    return;
+  }
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
     renderList();
@@ -2208,6 +2262,9 @@ addEventListener('keydown', (e) => {
     // 用户以为页面坏了，而且很难退回去（要先找到那个 × ）。
     if (localStorage.getItem('wb.previewOpen') === '1' && !mqNarrow.matches) openPreview();
   } catch (e) {
+    // 令牌失效（改了密码、换了机器）也会走到这里。那种情况下输入框
+    // 已经弹出来了，再说一遍「连接失败」纯属噪音。
+    if (isAuthError(e)) return;
     toast('连接失败：' + e.message + '（如果走代理，请把 100.64.0.0/10 加入代理例外）');
   }
 })();
