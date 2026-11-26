@@ -319,50 +319,74 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
 .shot-hint { display: none }
 
 /* ---------- 作者 / star ---------- */
-/* 对比表删掉后这块顶上来。它不是营销位，是「谁做的、要不要支持一下」，
-   所以不用卡片、不加边框，一行头像加一行字，跟页面其他部分同一个语气。 */
-.author {
-  display: flex; align-items: center; gap: 16px;
+/* 单作者页面的署名区。用户说原来「没有样式、排版拉跨」，原因很实在：
+   整页其他节都是「h2 + 卡片」，只有这块是几个裸元素在 620px 里散着摆，
+   头像和 Star 中间空 400px。
+   现在按作者卡的标准做法来（avatar / name / bio / 一个 action），
+   改成居中竖排 —— 只有一个人，横排一定会剩出大片空白；
+   竖排每行都是居中的，空白变成对称的留白，看着像有意留的。
+   参考：Zed 的团队页、sitemd 的 author-card 规范。 */
+.author-card {
   margin-top: 26px;
-  flex-wrap: wrap;
-  /* 不铺满 1060px 的 wrap。star 按钮用 margin-left:auto 推到右端，
-     铺满的话它离头像有 900px，中间一片空，看着不像一组东西。
-     收到 620px，按钮落在名字右侧一臂距离内。 */
-  max-width: 620px;
+  padding: 34px 24px 30px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg2);
+  text-align: center;
 }
-.author .avatar {
-  width: 76px; height: 76px;
+.author-card .avatar {
+  width: 72px; height: 72px;
   border-radius: 50%;
   border: 1px solid var(--line2);
-  flex-shrink: 0;
+  margin: 0 auto;
 }
-.author .who { display: flex; flex-direction: column; gap: 4px; min-width: 0 }
-.author .who b { font-size: 17px; font-weight: 600; color: var(--tx); letter-spacing: -.01em }
-.author .who span { font-size: 12.5px; color: var(--mu2); font-family: var(--mono) }
+.author-card > b {
+  display: flex; align-items: baseline; justify-content: center; gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  font-size: 16px; font-weight: 600; color: var(--tx);
+  letter-spacing: -.01em;
+}
+.author-card > b span {
+  font: 400 12.5px var(--mono); color: var(--mu2);
+  letter-spacing: 0;
+}
+.author-card > p {
+  font-size: 13px; line-height: 1.7; color: var(--mu2);
+  /* 390px 会让「…反馈的地方。」折出孤零零的三个字。
+     放到 420 一行正好放下，不折行。 */
+  margin: 8px auto 0;
+  max-width: 420px;
+}
 
-/* star 按钮推到右边，和左边的人分开 */
-.author .star {
-  margin-left: auto;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 15px;
+/* Star 是这块唯一的主操作，居中放在下面，和上面的文字形成一组。
+   做法和 .btn 一致：胶囊、按压回弹、hover 有蓝边。 */
+.author-card .star {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  margin-top: 20px;
+  padding: 10px 20px;
   border: 1px solid var(--line2);
-  border-radius: 8px;
-  font-size: 13px; color: var(--tx);
+  border-radius: 999px;
+  font-size: 13.5px; font-weight: 500; color: var(--tx);
   text-decoration: none;
-  background: var(--card);
-  transition: border-color .18s, background .18s, transform .1s;
+  background: rgba(255, 255, 255, .04);
+  transition: border-color .18s, background .18s, transform .18s;
 }
-.author .star:hover { border-color: rgba(109, 155, 255, .5); background: #151a23 }
-.author .star:active { transform: scale(.97) }
-.author .star svg { color: var(--blue); flex-shrink: 0 }
-/* 数字用等宽、浅一档，别让它和 Star 两个字抢注意力 */
-.author .star .cnt {
+.author-card .star:hover {
+  border-color: rgba(109, 155, 255, .55);
+  background: rgba(109, 155, 255, .1);
+  transform: translateY(-1px);
+}
+.author-card .star:active { transform: scale(.97) }
+.author-card .star svg { color: var(--blue); flex-shrink: 0 }
+/* 数字用等宽、浅一档，别让它和文字抢注意力 */
+.author-card .star .cnt {
   font-family: var(--mono); font-size: 12px;
-  color: var(--mu); padding-left: 7px;
+  color: var(--mu); padding-left: 9px;
   border-left: 1px solid var(--line2);
   font-style: normal;
+  font-variant-numeric: tabular-nums;
 }
-.author-note { font-size: 13px; color: var(--mu2); margin-top: 18px; line-height: 1.7; max-width: 620px }
 
 /* 边界说明不单独起一节标题，压成一段小字。
    它该被读到，但不该在页面上占一个和「安装」「界面」同级的标题。 */
@@ -474,16 +498,12 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
 
   .steps { grid-template-columns: 1fr }
 
-  /* 作者块在窄屏竖排：头像和名字一行，star 按钮换到下面占满宽。
-     挤在一行的话，按钮会被压到 100px 以内，「Star」和数字都会折行。 */
-  .author { gap: 14px }
-  .author .avatar { width: 60px; height: 60px }
-  .author .who b { font-size: 16px }
-  .author .star {
-    margin-left: 0; width: 100%;
-    justify-content: center;
-    padding: 11px 15px;
-  }
+  /* 作者卡在窄屏只需要收紧内边距和头像，结构不动 ——
+     它本来就是居中的，窄屏反而更自然。 */
+  .author-card { padding: 32px 18px 30px }
+  .author-card .avatar { width: 60px; height: 60px }
+  .author-card > b { font-size: 15px; margin-top: 12px }
+  .author-card .star { margin-top: 18px }
 
   footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px }
   .f-right { gap: 18px }
