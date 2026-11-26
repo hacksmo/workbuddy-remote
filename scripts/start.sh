@@ -57,7 +57,7 @@ OS="$(uname -s)"
 case "$OS" in
   Darwin) PLATFORM=macos ;;
   Linux)  PLATFORM=linux ;;
-  *) die "不支持的平台: $OS（仅支持 macOS / Linux）" ;;
+  *) die "不支持的平台: ${OS}（仅支持 macOS / Linux）" ;;
 esac
 
 # 找 WorkBuddy 可执行文件。返回 0 表示找到，路径写入全局 APP_BIN。
@@ -252,16 +252,65 @@ start_app() {
 
 # ── 桥进程管理 ──────────────────────────────────────────────────────────
 bridge_alive() {
-  [ -f "$PID_FILE" ] || return 1
-  local pid; pid="$(cat "$PID_FILE" 2>/dev/null)"
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+  # 先看 PID 文件，但 PID 文件会丢：桥被 LaunchAgent 重启、
+  # 用户手动起过一次、或者清理过 STATE_DIR 之后，文件不在了进程还在。
+  # 那种情况下报「未运行」会让人重复启动、撞端口，所以再补一次 HTTP 探测。
+  if [ -f "$PID_FILE" ]; then
+    local pid; pid="$(cat "$PID_FILE" 2>/dev/null)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then return 0; fi
+  fi
+  # PID 文件里的号可能还活着但已经不是桥了（被系统复用），
+  # 所以以端口是否响应 /health 为准。
+  curl -s -m 1 -o /dev/null "http://127.0.0.1:${WB_PORT}/health" 2>/dev/null
+}
+
+# 查当前真正在跑的桥 PID。PID 文件不可靠时用 lsof 从端口反查。
+bridge_pid() {
+  local p=""
+  if [ -f "$PID_FILE" ]; then
+    p="$(cat "$PID_FILE" 2>/dev/null)"
+    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null \
+       && ps -p "$p" -o command= 2>/dev/null | grep -q "cdp.mjs"; then
+      printf '%s' "$p"; return 0
+    fi
+  fi
+  command -v lsof >/dev/null 2>&1 || return 0
+  lsof -nP -iTCP:"$WB_PORT" -sTCP:LISTEN -t 2>/dev/null | head -1
 }
 
 stop_bridge() {
+  # 先卸开机自启。LaunchAgent 是 KeepAlive=true，只 kill 进程的话
+  # launchd 会立刻把它拉回来 —— 用户看到「桥已停止」，一查还在跑。
+  #
+  # 不写死 label：历史版本用过 com.shuimo.wb-bridge，现在是
+  # com.workbuddy.remote.bridge，机器上两个都可能残留。
+  # 判据是 plist 里是否引用了本项目的 cdp.mjs。
+  if [ "$PLATFORM" = macos ]; then
+    local plist label did=0
+    for plist in "$HOME/Library/LaunchAgents"/*.plist; do
+      [ -f "$plist" ] || continue
+      grep -q "workbuddy-remote/bridge/cdp.mjs" "$plist" 2>/dev/null || continue
+      label="$(basename "$plist" .plist)"
+      launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null \
+        || launchctl unload "$plist" 2>/dev/null || true
+      did=1
+    done
+    [ "$did" = 1 ] && {
+      sleep 0.6
+      dim "已同时关闭开机自启（要恢复：./scripts/autostart.sh install）"
+    }
+  fi
+
   if bridge_alive; then
-    kill "$(cat "$PID_FILE")" 2>/dev/null || true
+    # 用 bridge_pid 而不是直接读 PID_FILE：文件可能过期，
+    # kill 一个不存在的号会静默失败，真正的桥还活着，用户以为停了。
+    local p; p="$(bridge_pid)"
+    [ -n "$p" ] && kill "$p" 2>/dev/null || true
     for _ in $(seq 1 10); do bridge_alive || break; sleep 0.3; done
-    bridge_alive && kill -9 "$(cat "$PID_FILE")" 2>/dev/null || true
+    if bridge_alive; then
+      p="$(bridge_pid)"
+      [ -n "$p" ] && kill -9 "$p" 2>/dev/null || true
+    fi
     ok "桥已停止"
   else
     dim "桥未在运行"
@@ -276,7 +325,8 @@ start_bridge() {
   if command -v lsof >/dev/null 2>&1; then
     if lsof -nP -iTCP:"$WB_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
       if bridge_alive; then
-        ok "桥已在运行（pid $(cat "$PID_FILE")）"
+        local bp; bp="$(bridge_pid)"
+        if [ -n "$bp" ]; then ok "桥已在运行（pid ${bp}）"; else ok "桥已在运行"; fi
         return 0
       fi
       die "端口 ${WB_PORT} 已被其他进程占用，换个端口：WB_PORT=8800 $0"
@@ -334,6 +384,9 @@ print_access() {
 
 # ── 状态 ────────────────────────────────────────────────────────────────
 do_status() {
+  # 必须先展开 WB_HOST。主流程在启动前调过 resolve_hosts，但 --status
+  # 是独立入口，不调就会把字面量 "auto" 当成地址打印出来（http://auto:8797）。
+  resolve_hosts
   printf '%s平台%s      %s (%s)\n' "$C_B" "$C_0" "$PLATFORM" "$OS"
   if detect_app; then
     printf '%sWorkBuddy%s %s\n' "$C_B" "$C_0" "$APP_BIN"
@@ -346,11 +399,22 @@ do_status() {
     printf '%sCDP%s       :%s 未开启\n' "$C_B" "$C_0" "$CDP_PORT"
   fi
   if bridge_alive; then
-    printf '%s桥%s        %s:%-5s 运行中（pid %s）%s\n' "$C_B" "$C_0" "$C_OK" "$WB_PORT" "$(cat "$PID_FILE")" "$C_0"
+    # pid 文件可能不在或已过期（见 bridge_alive 里的说明），这时显示端口号就够
+    local bpid; bpid="$(bridge_pid)"
+    if [ -n "$bpid" ]; then
+      printf '%s桥%s        %s:%-5s 运行中（pid %s）%s\n' "$C_B" "$C_0" "$C_OK" "$WB_PORT" "$bpid" "$C_0"
+    else
+      printf '%s桥%s        %s:%-5s 运行中%s\n' "$C_B" "$C_0" "$C_OK" "$WB_PORT" "$C_0"
+    fi
     # 实际在监听哪些地址（含局域网），用 lsof 看真实绑定
     local binds=""
     if command -v lsof >/dev/null 2>&1; then
-      binds="$(lsof -nP -iTCP:"$WB_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $9}' | sed 's/.*://;s/.*\*//' | sort -u | tr '\n' ' ')"
+      # 第 9 列形如 127.0.0.1:8797 / [::1]:8797，要取冒号前那段。
+      # 原来用 sed 's/.*://' 把地址削掉了，只剩端口号，看不出绑在哪。
+      binds="$(lsof -nP -iTCP:"$WB_PORT" -sTCP:LISTEN 2>/dev/null \
+        | awk 'NR>1{print $9}' \
+        | sed -E 's/^\[(.+)\]:[0-9]+$/\1/; s/^(.+):[0-9]+$/\1/' \
+        | sort -u | tr '\n' ' ')"
     fi
     if [ -n "$binds" ]; then
       printf '%s监听%s      %s\n' "$C_B" "$C_0" "$binds"
@@ -365,6 +429,10 @@ do_status() {
           ;;
       esac
     fi
+    # 桥在跑就把带令牌的地址再列一遍。
+    # 启动时打印过一次，但用户第二天新开终端、或翻不到那屏滚动的输出时，
+    # 只能看到「运行中」，还得自己去翻 token 文件拼 URL。
+    print_access
   else
     printf '%s桥%s        :%s 未运行\n' "$C_B" "$C_0" "$WB_PORT"
   fi
@@ -385,7 +453,7 @@ for a in "$@"; do
     -h|--help)
       sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
-    *) die "未知参数: $a（--help 查看用法）" ;;
+    *) die "未知参数: ${a}（--help 查看用法）" ;;
   esac
 done
 
