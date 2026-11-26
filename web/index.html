@@ -1019,9 +1019,15 @@ async function drainQueue() {
     state.stick = true;
     await pollMessages();
   } catch (e) {
-    // 发不出去就塞回队首，别让用户的消息凭空消失
-    setCurQueue([next, ...curQueue()]);
-    toast('排队消息发送失败：' + (e && e.message ? e.message : e));
+    const msg = String((e && e.message) || e);
+    // 会话已经不存在了 → 这条消息发不出去也不该留着，否则每次 poll 都报错
+    if (/not found|不存在|404/i.test(msg)) {
+      toast('会话已不存在，排队消息已丢弃');
+    } else {
+      // 其他失败（网络抖动等）→ 塞回队首，别让用户的消息凭空消失
+      setCurQueue([next, ...curQueue()]);
+      toast('排队消息发送失败：' + msg);
+    }
   } finally {
     draining = false;
   }
@@ -1211,6 +1217,9 @@ async function removeSession(id, title) {
   if (!confirm('彻底删除会话「' + (title || id) + '」？此操作不可恢复。')) return;
   try {
     await api(`/sessions/${encodeURIComponent(id)}/delete`, { method: 'POST' });
+    // 会话没了，它的排队消息也没有意义了 —— 不清掉会永久占着 localStorage
+    const q = loadQueues();
+    if (q[id]) { delete q[id]; saveQueues(q); }
     if (state.current?.id === id) {
       state.current = null;
       clearTimeout(state.timer);

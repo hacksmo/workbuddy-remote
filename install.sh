@@ -110,14 +110,19 @@ if [ "$MODE" = client ]; then
   mkdir -p "$ICON_DIR"
   ICON_PNG="$ICON_DIR/workbuddy-remote.png"
 
-  # 高清图标走多个镜像：raw.githubusercontent 有 CDN 缓存，新推的文件
-  # 常有一段时间 404，所以 jsDelivr 放第一位。
+  # 高清图标走多个镜像。国内 Linux 实测 jsDelivr 与 raw.githubusercontent
+  # 都可能被重置（curl 35），只有 ghproxy 类镜像通，所以把它们也加进来。
+  # raw 的 SHA 地址是为了绕开 CDN 缓存延迟（新推的文件 @main 会 404 一阵）。
   # macOS 要 1024（.icns 里 512@2x 就是从它来的，不能放大凑），Linux 512 够。
   if [ "$PLATFORM" = macos ]; then ICON_ASSET=icon-1024.png; else ICON_ASSET=icon-512.png; fi
+  RAW="https://raw.githubusercontent.com/hacksmo/workbuddy-remote"
   ICON_URLS="${WB_ICON_URL:-}
 https://cdn.jsdelivr.net/gh/hacksmo/workbuddy-remote@main/assets/${ICON_ASSET}
-https://raw.githubusercontent.com/hacksmo/workbuddy-remote/8511958/assets/${ICON_ASSET}
-https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/${ICON_ASSET}"
+https://ghproxy.net/${RAW}/main/assets/${ICON_ASSET}
+https://gh-proxy.com/${RAW}/main/assets/${ICON_ASSET}
+${RAW}/8511958/assets/${ICON_ASSET}
+${RAW}/main/assets/${ICON_ASSET}
+https://ghfast.top/${RAW}/main/assets/${ICON_ASSET}"
 
   icon_ok() { [ -f "$1" ] && [ "$(wc -c <"$1" | tr -d ' ')" -gt 20000 ]; }
 
@@ -128,7 +133,7 @@ https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/${ICON_AS
     for u in $ICON_URLS; do
       [ -n "$u" ] || continue
       if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --max-time 12 "$u" -o "$ICON_PNG.tmp" 2>/dev/null && \
+        curl -fsSL --max-time 8 "$u" -o "$ICON_PNG.tmp" 2>/dev/null && \
           icon_ok "$ICON_PNG.tmp" && mv -f "$ICON_PNG.tmp" "$ICON_PNG" && icon_fetched=1 && break
       elif command -v wget >/dev/null 2>&1; then
         wget -q -T 12 -O "$ICON_PNG.tmp" "$u" 2>/dev/null && \
