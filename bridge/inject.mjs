@@ -202,6 +202,39 @@ export function probeTypes(id) {
  * 这就是桌面端「排队选项卡」的数据源 —— 消息经 sendPrompt 交给 WorkBuddy
  * 后由它内部串行排队，这里只是把同一份队列读出来给网页端渲染。
  * 网页端不再自己维护队列，所以两边永远一致。
+ *
+ * ## ⚠️ 为什么不能直接 `q.items()`（本项目最难查的一个坑）
+ *
+ * `wb.conversations.get(id).queueManager` 看着像实时队列，其实是渲染层
+ * 重新造出来的**本地镜像**：
+ *
+ *     function rehydrateQueueManager(transport, convId, seed) {
+ *       let r = [...seed];                                   // 只取一次种子
+ *       let refresh = () => transport.queueItems(convId).then(s => { r = s });
+ *       return { manager: { items: () => [...r] } };          // 对外只暴露 r
+ *     }
+ *
+ * 种子是「连上这个会话那一刻」的快照 —— 几乎总是空数组。之后 `r` 只有
+ * 两条更新途径：
+ *   1. `sendPrompt` 返回 `{disposition:'queued', item}` 时 `accept(item)`
+ *   2. 有人调 `c.on('queueUpdate', cb)` —— 那个分支里才会调 `N.refresh()`
+ *
+ * 我们走 CDP 直接 evaluate，两条都不满足：拿到的 `c` 没有 UI 组件订阅，
+ * 而 `c.sendPrompt(...)` 在这条路径上返回 `undefined`（不是 queued 回执）。
+ * 结果 `items()` 永远返回 `[]` —— 无论主进程队列里堆了多少条。
+ *
+ * 实测：订阅前 `items()` = 0，订阅后同一时刻 = 8（8 条探测消息全在）。
+ *
+ * 所以这里借用一次 `c.on('queueUpdate', cb)`：`on()` 内部会走一遍 refresh
+ * 路径，把真实队列拉进镜像。拿到后立刻退订 —— 桥是短请求，留着 listener
+ * 会泄漏；而且每次读都重新订阅，看到的总是最新状态。
+ *
+ * ## 为什么这段逻辑要内联，不能抽成模块级小函数
+ *
+ * `evaluateFn` 只把 `fn.toString()` 送进页面（`cdp.mjs` 第 127 行），
+ * 页面上下文里没有本模块的任何符号。抽成 `syncQueueMirror(c)` 再调用会
+ * 抛 ReferenceError，被下面的 catch 吞掉，表现为「队列永远 supported:false」。
+ * 这个坑踩过一次，别再抽。
  */
 export function readQueue(id) {
   return (async () => {
@@ -211,6 +244,15 @@ export function readQueue(id) {
     if (!q || typeof q.items !== 'function') {
       return { items: [], paused: false, supported: false };
     }
+    // 借订阅触发一次镜像 refresh。失败不影响读取 —— 大不了读到旧值，
+    // 不该因为同步失败就把「后端支持队列」这个事实报成 false。
+    try {
+      if (typeof c.on === 'function') {
+        const off = c.on('queueUpdate', () => {});
+        await new Promise((r) => setTimeout(r, 60));
+        if (typeof off === 'function') off();
+      }
+    } catch (e) {}
     let raw = [];
     try {
       raw = q.items() || [];
@@ -259,7 +301,9 @@ export function mutateQueue(id, op, itemId, index) {
     else if (op === 'pause') await q.pause(itemId);
     else if (op === 'resume') await q.resume();
     else throw new Error('未知队列操作: ' + op);
-    // 队列变更是异步落到后端的，等一下再读，避免读到旧快照
+    // 队列变更是异步落到后端的，等一下再读，避免读到旧快照。
+    // 这里不重复同步镜像：前端 queueOp() 操作完会立刻再 GET 一次 /queue，
+    // 那次读自带镜像刷新，比在这里多等一轮更干净。
     await new Promise((r) => setTimeout(r, 180));
     return { ok: true };
   })();

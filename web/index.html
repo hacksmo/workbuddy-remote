@@ -1038,6 +1038,18 @@ function startEvents() {
       try {
         const d = JSON.parse(ev.data);
         const name = String(d.e || '');
+        // 队列事件单独走一条快路：入队/出队/deleted 都会发这个。
+        // 走 pollMessages 那条 400ms 节流的话，用户点了发送要盯上千毫秒
+        // 才看到卡片；而且 pollMessages 里还套着 queuePollDue 的 4 秒闸门，
+        // 最坏能拖到四五秒。这里直接拉一次，150ms 节流防抖。
+        if (/queueUpdate/i.test(name)) {
+          clearTimeout(state.queueDebounce);
+          state.queueDebounce = setTimeout(() => {
+            if (!state.current) return;
+            fetchQueue().then(renderQueueCard).catch(() => {});
+          }, 150);
+          return;
+        }
         if (/conversation|request/i.test(name)) {
           // 事件很密（8 秒 190+ 条），节流到最多 400ms 一次
           const GAP = 400;
