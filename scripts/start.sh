@@ -27,10 +27,13 @@ TOKEN_FILE="$STATE_DIR/token"
 LOG_DIR="$STATE_DIR/logs"
 PID_FILE="$STATE_DIR/bridge.pid"
 BRIDGE_LOG="$LOG_DIR/bridge.log"
+ENDPOINT_FILE="$STATE_DIR/endpoints"
 
 CDP_PORT="${WB_CDP_PORT:-9333}"
 WB_PORT="${WB_PORT:-8797}"
-WB_HOST="${WB_HOST:-127.0.0.1}"
+WB_HOST="${WB_HOST:-auto}"
+# WB_LAN=0 可关掉局域网监听（只留回环），海康/公司网段不想暴露时用
+WB_LAN="${WB_LAN:-1}"
 
 mkdir -p "$STATE_DIR" "$LOG_DIR"
 chmod 700 "$STATE_DIR" 2>/dev/null || true
@@ -111,6 +114,65 @@ detect_app() {
   if [ -n "$found" ]; then APP_BIN="$found"; APP_KIND=linux-bin; return 0; fi
 
   return 1
+}
+
+# ── 局域网地址探测 ──────────────────────────────────────────────────────
+# 只认 RFC1918 私网段：192.168/16、10/8、172.16~172.31。
+# 排除 100.x（Tailscale）与 198.18/15（Shadowrocket 等 TUN 假地址），
+# 它们都在私网段之外或属于虚拟网卡，监听上去毫无意义。
+detect_lan_ips() {
+  command -v node >/dev/null 2>&1 || return 0
+  node -e '
+    const os = require("os");
+    const ok = /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/;
+    const out = [];
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const n of list || []) {
+        if (n.family !== "IPv4" || n.internal) continue;
+        if (ok.test(n.address)) out.push(n.address);
+      }
+    }
+    process.stdout.write([...new Set(out)].join(" "));
+  ' 2>/dev/null
+}
+
+# WB_HOST 的三种取值：
+#   缺省 auto  → 127.0.0.1 加上所有探测到的局域网 IP（同网段内直连，不绕公网）
+#   显式列表   → 原样使用（WB_HOST=127.0.0.1,192.168.0.52）
+#   WB_LAN=0   → 强制只监听回环，回到「只能经公网隧道访问」
+resolve_hosts() {
+  [ "$WB_HOST" = "auto" ] || return 0
+
+  if [ "$WB_LAN" = "0" ]; then
+    WB_HOST="127.0.0.1"
+    LAN_IPS=""
+    return 0
+  fi
+
+  LAN_IPS="$(detect_lan_ips)"
+  WB_HOST="127.0.0.1"
+  for ip in $LAN_IPS; do WB_HOST="$WB_HOST,$ip"; done
+}
+
+# 把本次可用端点落盘，供控制端/其它脚本读取，也方便用户排查
+write_endpoints() {
+  local token; token="$(load_token)"
+  {
+    printf '# WorkBuddy Remote endpoints —— 由 start.sh 自动生成，不要手改\n'
+    printf 'updated=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')"
+    printf 'hostname=%s\n' "$(hostname 2>/dev/null || echo unknown)"
+    printf 'port=%s\n' "$WB_PORT"
+    printf 'token=%s\n' "$token"
+    # .local 名字给同网段的 Mac 用（Bonjour 自动解析），IP 变了也不怕
+    if [ "$PLATFORM" = macos ]; then
+      local lh; lh="$(scutil --get LocalHostName 2>/dev/null || true)"
+      [ -n "$lh" ] && printf 'mdns=%s.local\n' "$lh"
+    fi
+    for ip in ${LAN_IPS:-}; do
+      printf 'lan=http://%s:%s\n' "$ip" "$WB_PORT"
+    done
+  } >"$ENDPOINT_FILE" 2>/dev/null || true
+  chmod 600 "$ENDPOINT_FILE" 2>/dev/null || true
 }
 
 # ── 令牌 ────────────────────────────────────────────────────────────────
@@ -254,10 +316,17 @@ print_access() {
   echo
   printf '%s访问地址%s\n' "$C_B" "$C_0"
   for h in $(echo "$WB_HOST" | tr ',' ' '); do
-    printf '  http://%s:%s/?token=%s\n' "$h" "$WB_PORT" "$token"
+    case "$h" in
+      127.0.0.1|localhost|::1) printf '  %s（仅本机）%s\n  http://%s:%s/?token=%s\n' "$C_DIM" "$C_0" "$h" "$WB_PORT" "$token" ;;
+      *)                       printf '  %s（同网段直连，免公网）%s\n  http://%s:%s/?token=%s\n' "$C_DIM" "$C_0" "$h" "$WB_PORT" "$token" ;;
+    esac
   done
+  if [ -z "${LAN_IPS:-}" ] && [ "$WB_LAN" != "0" ]; then
+    dim "没探测到局域网地址，只能经隧道/公网访问"
+  fi
   echo
   dim "令牌保存在 ${TOKEN_FILE}（权限 600）"
+  dim "端点清单：${ENDPOINT_FILE}"
   dim "日志：${BRIDGE_LOG}"
 }
 
@@ -276,6 +345,24 @@ do_status() {
   fi
   if bridge_alive; then
     printf '%s桥%s        %s:%-5s 运行中（pid %s）%s\n' "$C_B" "$C_0" "$C_OK" "$WB_PORT" "$(cat "$PID_FILE")" "$C_0"
+    # 实际在监听哪些地址（含局域网），用 lsof 看真实绑定
+    local binds=""
+    if command -v lsof >/dev/null 2>&1; then
+      binds="$(lsof -nP -iTCP:"$WB_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $9}' | sed 's/.*://;s/.*\*//' | sort -u | tr '\n' ' ')"
+    fi
+    if [ -n "$binds" ]; then
+      printf '%s监听%s      %s\n' "$C_B" "$C_0" "$binds"
+      case " $binds " in
+        *" 127.0.0.1 "*)
+          local has_lan=0
+          for b in $binds; do
+            case "$b" in 127.0.0.1|::1|localhost) ;; *) has_lan=1 ;; esac
+          done
+          [ "$has_lan" = 1 ] && printf '%s局域网%s      %s已开放（同网段可直连）%s\n' "$C_B" "$C_0" "$C_OK" "$C_0" \
+                             || printf '%s局域网%s      %s未开放（仅回环，需经隧道）%s\n' "$C_B" "$C_0" "$C_ERR" "$C_0"
+          ;;
+      esac
+    fi
   else
     printf '%s桥%s        :%s 未运行\n' "$C_B" "$C_0" "$WB_PORT"
   fi
@@ -308,6 +395,9 @@ fi
 
 need_node
 
+# 先算好监听地址，后面 start_bridge / print_access / endpoints 都依赖
+resolve_hosts
+
 printf '%sWorkBuddy Remote%s  platform=%s\n\n' "$C_B" "$C_0" "$PLATFORM"
 
 detect_app || die "未找到 WorkBuddy 桌面端。请先安装，或用 WB_APP=/path/to/workbuddy 指定路径"
@@ -322,5 +412,7 @@ else
 fi
 
 start_bridge || die "桥启动失败"
+
+write_endpoints
 
 if [ "$QUIET" != "1" ]; then print_access; fi

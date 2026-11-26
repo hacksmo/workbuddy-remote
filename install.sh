@@ -76,6 +76,26 @@ if [ "$MODE" = client ]; then
     *) die "地址要以 http:// 或 https:// 开头" ;;
   esac
 
+  # 从公网地址里拆出 token —— 局域网直连时要用同一个 token
+  CLIENT_TOKEN="$(printf '%s' "$CLIENT_URL" | sed -n 's/.*[?&]token=\([^&]*\).*/\1/p')"
+
+  # 顺带问被控端要一份「局域网直连候选地址」。装的时候公网路是通的，
+  # 此刻拿到的地址质量最好。拿不到不影响安装，运行时还会再探一次。
+  CLIENT_LAN_CANDIDATES=""
+  if [ -n "$CLIENT_TOKEN" ]; then
+    # https://host/?token=x  →  https://host/info?token=x
+    _base="${CLIENT_URL%%\?*}"
+    _base="${_base%/}"
+    _info="$(curl -fsSL --max-time 6 "${_base}/info?token=${CLIENT_TOKEN}" 2>/dev/null || true)"
+    if [ -n "$_info" ]; then
+      CLIENT_LAN_CANDIDATES="$(printf '%s' "$_info" \
+        | grep -o '"url":"http://[0-9.]*:[0-9]*"' \
+        | sed 's/.*"url":"//;s/"$//' || true)"
+      [ -n "$CLIENT_LAN_CANDIDATES" ] && dim "已知局域网地址：$(printf '%s' "$CLIENT_LAN_CANDIDATES" | tr '\n' ' ')"
+    fi
+    unset _base _info
+  fi
+
   mkdir -p "$BIN_DIR"
 
   # 图标：优先从仓库下载高清版，失败则用脚本内嵌的 128px 兜底版
@@ -149,29 +169,140 @@ https://raw.githubusercontent.com/hacksmo/workbuddy-remote/main/assets/${ICON_AS
 
   PROFILE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/workbuddy-remote/client-profile"
   mkdir -p "$PROFILE_DIR"
+  ENDPOINT_CACHE="${XDG_CONFIG_HOME:-$HOME/.config}/workbuddy-remote/lan-endpoint"
 
-  # 统一的启动逻辑，写进 bin/ 里的命令，.app 和 .desktop 都调它
-  cat >"$BIN_DIR/workbuddy" <<LAUNCHER
+  # 统一的启动逻辑，写进 bin/ 里的命令，.app 和 .desktop 都调它。
+  #
+  # 用单引号 heredoc（内容原样保留）再替换 @@占位符，而不是双引号 heredoc：
+  # 双引号里每个 $ 都要转义，嵌套引号一多极易写错，之前就在这上面栽过。
+  cat >"$BIN_DIR/workbuddy" <<'LAUNCHER'
 #!/usr/bin/env bash
 # WorkBuddy 控制端启动器 —— 打开远程开发机
 # 由 install.sh --client 生成，重装会覆盖
-URL='${CLIENT_URL}'
-PROFILE='${PROFILE_DIR}'
-CHROME='${CHROME}'
+#
+# 同网段时优先走局域网直连：延迟低一个数量级，且流量不出内网。
+# 探测失败静默回退公网，不打扰使用者（局域网 IP 会随 DHCP 变化，失败是常态）。
 
-if [ -n "\$CHROME" ] && [ -x "\$CHROME" ]; then
+PUB='@@URL@@'
+TOKEN='@@TOKEN@@'
+PORT='@@PORT@@'
+PROFILE='@@PROFILE@@'
+CHROME='@@CHROME@@'
+CACHE='@@CACHE@@'
+# 安装时从被控端问到过的局域网地址，空格分隔
+CANDIDATES='@@CANDIDATES@@'
+
+FORCE=auto
+EXTRA=()
+for a in "$@"; do
+  case "$a" in
+    --public) FORCE=public ;;
+    --lan)    FORCE=lan ;;
+    -h|--help)
+      printf '用法: %s [--public | --lan]\n\n' "$(basename "$0")"
+      printf '  默认   同网段优先直连，探测不到就回退公网\n'
+      printf '  --public  强制走公网（排查直连问题时用）\n'
+      printf '  --lan     只走局域网，不做回退\n'
+      exit 0 ;;
+    *) EXTRA+=("$a") ;;
+  esac
+done
+
+# 一轮健康检查只给 0.4 秒：局域网内正常 5~30ms 返回，
+# 超时基本就是不在同一网段，多等纯属浪费启动时间。
+healthy() { curl -fsS -m 0.4 "http://$1:$PORT/health" >/dev/null 2>&1; }
+
+host_of() { printf '%s' "$1" | sed 's|^http://||; s|:[0-9]*$||; s|/.*$||'; }
+
+# 只有「一个候选都没有」时才问被控端的公网入口，因为这个请求要绕一圈公网，
+# 慢且可能不通。日常换 WiFi / DHCP 换 IP 靠候选里的 .local 名字就能兜住。
+refresh_candidates() {
+  local base json
+  base="${PUB%%\?*}"
+  base="${base%/}"
+  json="$(curl -fsS -m 3 "${base}/info" 2>/dev/null)" || return 0
+  printf '%s' "$json" | grep -o '"url":"http://[0-9.]*:[0-9]*"' | sed 's/.*"url":"//; s/"$//'
+  printf '%s' "$json" | grep -o '"mdns":"[^"]*"' | sed 's/.*"mdns":"//; s/"$//' | sed "s|.*|http://&:\$PORT|"
+}
+
+pick_lan() {
+  local u h tries=0 list=""
+  # 缓存里的地址排最前（上次成功的，命中率最高），其次是安装时问到的
+  list="$(cat "$CACHE" 2>/dev/null) $CANDIDATES"
+
+  for u in $list; do
+    [ -n "$u" ] || continue
+    h="$(host_of "$u")"
+    [ -n "$h" ] || continue
+    tries=$((tries + 1))
+    [ "$tries" -gt 4 ] && break
+    if healthy "$h"; then printf '%s' "$h"; return 0; fi
+  done
+
+  # 候选全空（首次运行且安装时也没问到）→ 才去问公网入口
+  if [ -z "$(printf '%s' "$list" | tr -d ' ')" ]; then
+    for u in $(refresh_candidates); do
+      h="$(host_of "$u")"
+      [ -n "$h" ] || continue
+      if healthy "$h"; then printf '%s' "$h"; return 0; fi
+    done
+  fi
+  return 1
+}
+
+HOST=""
+NET=public
+case "$FORCE" in
+  public) ;;
+  lan)
+    HOST="$(pick_lan)" || { printf '局域网内没找到可用的 WorkBuddy 服务\n' >&2; exit 1; } ;;
+  *)
+    HOST="$(pick_lan)" || HOST="" ;;
+esac
+
+if [ -n "$HOST" ]; then
+  URL="http://${HOST}:${PORT}/?token=${TOKEN}&net=lan"
+  NET=lan
+  mkdir -p "$(dirname "$CACHE")" 2>/dev/null || true
+  printf 'http://%s:%s\n' "$HOST" "$PORT" >"$CACHE" 2>/dev/null || true
+else
+  URL="${PUB}&net=public"
+  NET=public
+fi
+
+# 从终端手动跑时给出提示，双击 .app 启动时 stdout 不可见，这里就不打扰
+if [ -t 1 ]; then
+  [ "$NET" = lan ] && printf '  局域网直连 %s:%s\n' "$HOST" "$PORT" || printf '  经公网访问\n'
+fi
+
+if [ -n "$CHROME" ] && [ -x "$CHROME" ]; then
   # --app 开无地址栏窗口；独立 user-data-dir 保证记住登录态且不污染日常浏览器
-  exec "\$CHROME" --app="\$URL" --user-data-dir="\$PROFILE" \\
-    --window-size=1440,900 --no-first-run --no-default-browser-check \\
-    --disable-features=Translate --class=WorkBuddyRemote "\$@"
+  exec "$CHROME" --app="$URL" --user-data-dir="$PROFILE" \
+    --window-size=1440,900 --no-first-run --no-default-browser-check \
+    --disable-features=Translate --class=WorkBuddyRemote ${EXTRA[@]+"${EXTRA[@]}"}
 fi
 
 # 没有 Chromium 系浏览器时退化为系统默认浏览器
-case "\$(uname -s)" in
-  Darwin) exec open "\$URL" ;;
-  *)      exec xdg-open "\$URL" 2>/dev/null || echo "请手动打开：\$URL" ;;
+case "$(uname -s)" in
+  Darwin) exec open "$URL" ;;
+  *)      exec xdg-open "$URL" 2>/dev/null || echo "请手动打开：$URL" ;;
 esac
 LAUNCHER
+
+  # 占位符替换。用 | 作分隔符，路径里不会有它。
+  CORP_PORT="$(printf '%s' "$CLIENT_URL" | sed -n 's|.*://[^:/]*:\([0-9]*\).*|\1|p')"
+  [ -n "$CORP_PORT" ] || CORP_PORT=8797
+  _tmp="$(mktemp)"
+  sed \
+    -e "s|@@URL@@|${CLIENT_URL}|g" \
+    -e "s|@@TOKEN@@|${CLIENT_TOKEN}|g" \
+    -e "s|@@PORT@@|${CORP_PORT}|g" \
+    -e "s|@@PROFILE@@|${PROFILE_DIR}|g" \
+    -e "s|@@CHROME@@|${CHROME}|g" \
+    -e "s|@@CACHE@@|${ENDPOINT_CACHE}|g" \
+    -e "s|@@CANDIDATES@@|$(printf '%s' "$CLIENT_LAN_CANDIDATES" | tr '\n' ' ')|g" \
+    "$BIN_DIR/workbuddy" >"$_tmp" && mv -f "$_tmp" "$BIN_DIR/workbuddy"
+  unset _tmp
   chmod +x "$BIN_DIR/workbuddy"
 
   # ── macOS：生成 .app，带图标，可拖进程序坞 ──────────────────────────

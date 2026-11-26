@@ -187,6 +187,11 @@ async function probe() {
 
 /** HTTP 服务：给浏览器用 */
 async function serve() {
+  // 监听地址集合：逗号分隔，可含 127.0.0.1 与局域网 IP
+  const HOSTS = String(values.host || '127.0.0.1').split(',').map((h) => h.trim()).filter(Boolean);
+  // 其中真正对局域网开放的（用于 /info 上报给控制端做直连探测）
+  const LAN_HOSTS = HOSTS.filter((h) => !['127.0.0.1', 'localhost', '::1', '0.0.0.0', '::'].includes(h));
+
   let sharedConn = null;
   async function getConn() {
     if (!sharedConn) {
@@ -360,7 +365,22 @@ async function serve() {
         }
         const ts = ips.find((x) => x.ip.startsWith('100.'))?.ip || null;
         const lan = ips.find((x) => x.ip.startsWith('192.168.') || x.ip.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(x.ip))?.ip || null;
-        return send(200, { ok: true, value: { hostname: os.hostname(), ips, tailscale: ts, lan } });
+        return send(200, {
+          ok: true,
+          value: {
+            hostname: os.hostname(),
+            ips,
+            tailscale: ts,
+            lan,
+            // 局域网直连候选：只有 bridge 真的在这些地址上开着端口，控制端才连得上。
+            // 控制端拿它拼 http://<addr>:<port>，因此这里只报「本进程实际监听的」地址。
+            lanEndpoints: LAN_HOSTS.filter((h) => h !== '127.0.0.1' && h !== 'localhost' && h !== '::1')
+              .map((h) => ({ host: h, port: LISTEN, url: `http://${h}:${LISTEN}` })),
+            port: LISTEN,
+            // 给控制端一个提示：SameSite 之类的跨源限制与 mixed content 都由它自己判断
+            mdns: os.hostname().endsWith('.local') ? os.hostname() : null,
+          },
+        });
       }
 
       if (url.pathname === '/events' && req.method === 'GET') {
@@ -612,10 +632,12 @@ async function serve() {
     }
   };
 
-  const HOSTS = String(values.host || '127.0.0.1').split(',').map((h) => h.trim()).filter(Boolean);
   for (const h of HOSTS) {
     http.createServer(handler).listen(LISTEN, h, () => {
-      console.log(`CDP 桥已监听: http://${h}:${LISTEN}`);
+      const tag = LAN_HOSTS.includes(h) ? '（局域网）' : '';
+      console.log(`CDP 桥已监听: http://${h}:${LISTEN}${tag}`);
+    }).on('error', (e) => {
+      console.error(`监听 ${h}:${LISTEN} 失败：${e.message}`);
     });
   }
   console.log(`  GET  /health  健康检查`);

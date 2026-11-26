@@ -180,7 +180,13 @@
   #input:focus{border-color:var(--accent)}
   #send{height:44px;padding:0 20px;border-radius:11px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
   #send:disabled{opacity:.45;cursor:default}
-  .hint{max-width:980px;margin:6px auto 0;font-size:11px;color:var(--muted)}
+  .hint{max-width:980px;margin:6px auto 0;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:wrap}
+  /* 当前链路标识：局域网绿点、公网黄点。点一下走一次实时测速 */
+  #net{display:inline-flex;align-items:center;gap:5px;padding:1px 7px 1px 6px;border-radius:20px;border:1px solid var(--line);background:var(--panel-2);cursor:pointer;font-size:10.5px;line-height:1.6;white-space:nowrap}
+  #net:hover{border-color:var(--accent)}
+  #net i{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  #net.lan i{background:#3ddc84;box-shadow:0 0 6px #3ddc8499}
+  #net.pub i{background:#f0b429}
 
   html.is-linux body{font-size:16px;line-height:1.7;font-weight:500}
   html.is-linux .item .m{font-weight:400;font-size:10.5px}
@@ -283,7 +289,7 @@
         </div>
       </div>
       <input type="file" id="filePick" accept="image/*" multiple style="display:none" />
-      <div class="hint" id="hint">直连本机 WorkBuddy 主进程，会话与桌面端实时同步</div>
+      <div class="hint" id="hint"><span id="net" title="点击测一次当前链路延迟"><i></i><b>检测中</b></span><span id="hintText">直连本机 WorkBuddy 主进程，会话与桌面端实时同步</span></div>
     </footer>
   </main>
 </div>
@@ -865,7 +871,7 @@ async function pollMessages(full) {
     updateSendBtn();
     renderMessages(items);
   } catch (e) {
-    $('#hint').textContent = /生成|超时/.test(e.message) ? '会话正在生成，稍后自动刷新' : '读取失败：' + e.message;
+    $('#hintText').textContent = /生成|超时/.test(e.message) ? '会话正在生成，稍后自动刷新' : '读取失败：' + e.message;
   } finally {
     state.polling = false;
   }
@@ -1089,6 +1095,38 @@ $('#input').addEventListener('paste', async (e) => {
   if (files.length) { e.preventDefault(); await addFiles(files); }
 });
 
+// ── 链路标识 ───────────────────────────────────────────────────────────
+// 判断依据是「页面本身从哪个地址加载的」，不用猜：
+//   回环 → 本机；私网段 / .local → 局域网直连；其它（域名）→ 经公网或隧道
+// 延迟用一次真实请求量出来，顺带验证链路还活着。
+function netKind(h) {
+  if (/^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(h)) return 'local';
+  if (/^192\.168\./.test(h) || /^10\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h)) return 'lan';
+  if (/\.local$/i.test(h)) return 'lan';
+  return 'pub';
+}
+const NET_LABEL = { local: '本机', lan: '局域网', pub: '公网' };
+
+async function probeNet() {
+  const el = $('#net');
+  const label = el.querySelector('b');
+  const kind = netKind(location.hostname);
+  el.classList.toggle('lan', kind !== 'pub');
+  el.classList.toggle('pub', kind === 'pub');
+  el.title = NET_LABEL[kind] + '（' + location.hostname + '）—— 点击测延迟';
+
+  const t0 = performance.now();
+  try {
+    await fetch('/health?t=' + Date.now(), { cache: 'no-store' });
+    const ms = Math.round(performance.now() - t0);
+    label.textContent = NET_LABEL[kind] + ' ' + ms + 'ms';
+  } catch {
+    label.textContent = NET_LABEL[kind] + ' 超时';
+  }
+}
+
+$('#net').addEventListener('click', probeNet);
+
 async function resolveLocal(url) {
   // 远程访问时，localhost 指向的是家里那台机器；换成工作机的可达地址
   if (!/^(https?:\/\/)?(localhost|127\.0\.0\.1)(:|\/|$)/.test(url)) return url;
@@ -1167,6 +1205,7 @@ $('#input').addEventListener('input', (e) => {
 });
 
 (async () => {
+  probeNet();  // 不 await：链路标识不该拖慢首屏
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
     renderList();
