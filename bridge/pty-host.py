@@ -134,7 +134,16 @@ def main():
             n = len(buf)
             while i < n:
                 if buf[i:i + 1] == CTL:
-                    # 控制帧：\x00R<cols>x<rows>\n 或 \x00K
+                    # 控制帧两种形态：
+                    #   \x00K                  不带换行，两字节就是完整命令
+                    #   \x00R<cols>x<rows>\n   带参数，靠 \n 收尾
+                    # 早期两个都当「等到 \n 才算完」处理，结果 \x00K 永远
+                    # 等不到换行，一直躺在 pending 里 —— node 侧 kill 之后
+                    # PTY 进程永不退出，用户 shell 在后台一直挂着。
+                    if buf[i + 1:i + 2] == b'K':
+                        running = False
+                        i += 2
+                        break
                     nl = buf.find(b'\n', i)
                     if nl < 0:
                         pending = buf[i:]      # 还没收完，等下一批

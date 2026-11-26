@@ -272,13 +272,20 @@ class TermSession {
   kill() {
     if (this.exited) return;
     try { this.proc.stdin.write('\x00K'); } catch {}
-    // python 侧会 SIGHUP 子进程；再兜一层，2 秒后强杀
+    // python 侧会 SIGHUP 子进程；再兜一层，2 秒后强杀。
+    // 这里的判断是 proc.exitCode 而不是 this.exited —— destroy() 里会把
+    // this.exited 置 true，用 this.exited 当条件的话兜底永远不触发，
+    // 结果 \x00K 一旦没送达（管道已关、python 卡住）就永久泄漏一个 PTY。
     setTimeout(() => {
-      if (!this.exited) { try { this.proc.kill('SIGKILL'); } catch {} }
+      if (this.proc.exitCode === null && this.proc.signalCode === null) {
+        try { this.proc.kill('SIGKILL'); } catch {}
+      }
     }, 2000).unref?.();
   }
 
   destroy() {
+    // 先 kill 再标 exited：kill() 内部要看 exited 决定是否动手，
+    // 顺序反了会变成「标了已退出但进程还活着」。
     this.kill();
     this.exited = true;
     sessions.delete(this.sid);
