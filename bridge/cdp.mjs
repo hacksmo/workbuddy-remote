@@ -21,6 +21,8 @@ import { fileURLToPath } from 'node:url';
 // 注入到页面里执行的代码放在单独文件，靠 fn.toString() 传过去，
 // 避免模板字符串里嵌套转义（曾导致 /messages 整体 500）
 import { collectMessages, answerPending, probeTypes, readQueue, mutateQueue } from './inject.mjs';
+// 远程终端：WebSocket + PTY，独立模块，不依赖任何 npm 包
+import { handleTerminalUpgrade, isTerminalWs, listSessions as termSessions, killSession as termKill } from './terminal.mjs';
 import { parseArgs } from 'node:util';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -285,7 +287,8 @@ async function serve() {
     // 这里额外认一下 /app，界面本身还是同一份文件。桥自己的绝对路径
     // （/md.js、/events、/icons/…）不受影响，所以前端一个字都不用改。
     const isShell = url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/app' || url.pathname === '/app/';
-    const isPublic = isShell || url.pathname === '/md.js' || url.pathname === '/health' || url.pathname === '/info' || url.pathname === '/manifest.json' || url.pathname.startsWith('/fonts/') || url.pathname.startsWith('/icons/');
+    const isPublic = isShell || url.pathname === '/md.js' || url.pathname === '/health' || url.pathname === '/info' || url.pathname === '/manifest.json' || url.pathname.startsWith('/fonts/') || url.pathname.startsWith('/icons/')
+      || url.pathname.startsWith('/vendor/');
     if (values.token && !isPublic) {
       // 图片、iframe 之类没法带 Authorization 头，只能靠 query；两者都接受
       const got = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('token') || '';
@@ -348,6 +351,22 @@ async function serve() {
         const js = await readFile(path.join(WEB_DIR, 'md.js'), 'utf8');
         res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', ...allow });
         return res.end(js);
+      }
+
+      // 终端前端依赖（xterm.js / addon-fit / xterm.css）。走白名单而不是
+      // 通配目录：这几个文件是第三方库，没有敏感内容，免鉴权才能被 <link> 直接引用。
+      if (url.pathname.startsWith('/vendor/')) {
+        const name = path.basename(url.pathname);
+        const MIME = { '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+        const ext = path.extname(name);
+        if (!/^[\w.-]+\.(js|css)$/.test(name) || !MIME[ext]) return send(404, { error: 'not found' });
+        try {
+          const body = await readFile(path.join(WEB_DIR, 'vendor', name));
+          res.writeHead(200, { 'Content-Type': MIME[ext], 'Cache-Control': 'public, max-age=604800', ...allow });
+          return res.end(body);
+        } catch {
+          return send(404, { error: 'not found' });
+        }
       }
 
       if (url.pathname.startsWith('/preview/')) {
@@ -436,6 +455,18 @@ async function serve() {
         const cdp = await getConn();
         const ok = await cdp.evaluate('1+1');
         return send(200, { ok: ok === 2 });
+      }
+
+      // ---- 远程终端 ----
+      // 会话列表用于前端恢复标签页（刷新后把还活着的终端接回来）
+      if (url.pathname === '/terminal/sessions' && req.method === 'GET') {
+        return send(200, { ok: true, value: termSessions() });
+      }
+      const mTermKill = url.pathname.match(/^\/terminal\/sessions\/([^/]+)\/kill$/);
+      if (mTermKill && req.method === 'POST') {
+        const sid = decodeURIComponent(mTermKill[1]);
+        const ok = termKill(sid);
+        return send(ok ? 200 : 404, ok ? { ok: true } : { error: 'session not found' });
       }
 
       if (url.pathname === '/apis') {
@@ -690,7 +721,27 @@ async function serve() {
   };
 
   for (const h of HOSTS) {
-    http.createServer(handler).listen(LISTEN, h, () => {
+    const srv = http.createServer(handler);
+    // 终端的 WebSocket 走 upgrade。注意鉴权必须在这里再做一次：
+    // upgrade 请求不进 handler，上面那段 token 白名单对它是无效的，
+    // 漏掉这一步等于把 shell 直接对局域网敞开。
+    srv.on('upgrade', (req, socket, head) => {
+      let p;
+      try { p = new URL(req.url, 'http://localhost').pathname; } catch { socket.destroy(); return; }
+      if (!isTerminalWs(p)) { socket.write('HTTP/1.1 404 Not Found\r\n\r\n'); socket.destroy(); return; }
+      if (values.token) {
+        const u = new URL(req.url, 'http://localhost');
+        const got = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+          || u.searchParams.get('token') || '';
+        if (got !== values.token) {
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      }
+      handleTerminalUpgrade(req, socket, head);
+    });
+    srv.listen(LISTEN, h, () => {
       const tag = LAN_HOSTS.includes(h) ? '（局域网）' : '';
       console.log(`CDP 桥已监听: http://${h}:${LISTEN}${tag}`);
     }).on('error', (e) => {
@@ -700,6 +751,7 @@ async function serve() {
   console.log(`  GET  /health  健康检查`);
   console.log(`  GET  /spaces  空间分组`);
   console.log(`  GET  /preview/<绝对路径>  文件预览`);
+  console.log(`  WS   /terminal/ws  远程终端`);
   console.log(`  POST /call    {"path":"wb.conversations.list","args":[]}`);
 }
 

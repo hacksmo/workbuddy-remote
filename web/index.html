@@ -310,6 +310,87 @@
     .md-table::-webkit-scrollbar{height:4px}
     .md-table::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:2px}
   }
+
+  /* ── 远程终端 ────────────────────────────────────────────────
+     位置放在 main 里、对话区和输入框之间，做成底部 dock。理由是终端
+     的宽高比：80 列 × 24 行本来就横向长，塞进右侧 46% 的面板里只能看到
+     40 多列，ls 一次就折行。IDE 的终端面板（VS Code / JetBrains）都是
+     底部 dock，不是右侧，同一个原因。
+     对话区留在上面还能继续看，边跑命令边看模型输出。
+
+     高度默认 320px，不按视口比例：终端里多数时候只有几行输出，
+     46vh 在 1440x900 下是 414px，内容占 6 行、下面空 200 多像素。
+     要更大用工具栏的 ⤢。用 px 还有个好处 —— 笔记本和 4K 屏视觉一致。 */
+  #term{display:none;flex-direction:column;height:320px;min-height:150px;
+        border-top:1px solid var(--line);background:var(--panel)}
+  #term.open{display:flex}
+  .term-bar{display:flex;align-items:center;gap:6px;padding:5px 8px;flex-shrink:0;
+            border-bottom:1px solid var(--line);background:var(--panel-2);min-height:38px}
+  /* 标签条：横向滚动，不换行。终端标签多了之后换行会把 dock 越撑越高 */
+  .term-tabs{display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;flex-shrink:1;min-width:0;scrollbar-width:none}
+  .term-tabs::-webkit-scrollbar{height:0}
+  .term-tab{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;
+            border:1px solid transparent;background:transparent;color:var(--muted);
+            font-size:12px;cursor:pointer;white-space:nowrap;flex-shrink:0;max-width:172px}
+  .term-tab:hover{background:var(--hover);color:var(--text)}
+  .term-tab.on{background:var(--panel);border-color:var(--line);color:var(--text)}
+  .term-tab .nm{overflow:hidden;text-overflow:ellipsis;max-width:112px}
+  .term-tab .st{width:5px;height:5px;border-radius:50%;flex-shrink:0;background:#4a4a4a}
+  .term-tab .st.live{background:var(--ok)}
+  .term-tab .st.dead{background:var(--del-fg)}
+  .term-tab .x{opacity:0;font-size:13px;line-height:1;padding:0 1px;border-radius:3px}
+  .term-tab:hover .x,.term-tab.on .x{opacity:.6}
+  .term-tab .x:hover{opacity:1;color:var(--del-fg)}
+  .term-btn{height:26px;min-width:26px;padding:0 7px;border-radius:6px;border:1px solid var(--line);
+            background:var(--panel);color:var(--muted);cursor:pointer;font-size:11.5px;flex-shrink:0}
+  .term-btn:hover{color:var(--text);border-color:#3a3a3a}
+  .term-state{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;
+              text-overflow:ellipsis;padding-right:8px;flex:0 1 auto;min-width:0}
+  .term-state.bad{color:var(--del-fg)}
+  /* 把「新建 / 清屏」和「放大 / 收起」拉开：左边是会话操作，
+     右边是面板操作。之前全挤在左边、状态文字单独浮到最右，
+     中间空一大条，看起来像没对齐。 */
+  .term-spacer{flex:1 1 auto;min-width:8px}
+  /* xterm 容器必须有个确定尺寸的父级，fit 插件才能算出几行几列。
+     左右留白对齐对话区的 980px 栏宽 —— 终端铺满整个 main 会显得
+     比上面的对话区宽出一截，视觉上像两块不同的东西。 */
+  .term-body{flex:1;min-height:0;padding:6px 0 4px;overflow:hidden;
+             max-width:calc(980px / var(--zoom,1));margin:0 auto;width:100%}
+  .term-body .xterm{height:100%}
+  .term-body .xterm-viewport{background:transparent!important}
+  .term-body .xterm-viewport::-webkit-scrollbar{width:8px}
+  .term-body .xterm-viewport::-webkit-scrollbar-thumb{background:var(--hover);border-radius:4px}
+  /* 触屏键盘工具条：手机软键盘打不出 Ctrl+C / Esc / 方向键，
+     没有这一条就完全没法在手机上用 vim、中断进程、翻历史命令。
+     判据用「粗指针 或 窄屏」两个条件：
+     只写 pointer:coarse 的话，桌面浏览器进响应式模式（以及很多
+     安卓平板的二合一键盘状态）不触发，工具条该出现却不见；
+     窄屏本身就是「这条会被手指用到」的强信号，两个条件取并集最稳。 */
+  .term-keys{display:none;gap:5px;padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+             border-top:1px solid var(--line);overflow-x:auto;scrollbar-width:none;flex-shrink:0}
+  .term-keys::-webkit-scrollbar{display:none}
+  .term-keys button{flex:0 0 auto;min-width:42px;height:32px;border-radius:7px;border:1px solid var(--line);
+                    background:var(--panel-2);color:var(--text);font-size:12px;cursor:pointer}
+  .term-keys button:active{background:var(--hover)}
+  .term-keys button.armed{background:var(--accent);border-color:var(--accent);color:#fff}
+  @media (pointer:coarse){ .term-keys{display:flex} }
+  @media (max-width:900px){ .term-keys{display:flex} }
+
+  @media (max-width:900px){
+    /* 手机上底部 dock 只剩几十像素，什么也看不全。
+       改成整屏覆盖，和预览面板同一套处理。 */
+    #term{position:fixed;inset:0;height:auto;z-index:46;border-top:none;
+          display:none;flex-direction:column;
+          padding-top:env(safe-area-inset-top)}
+    /* .open 的 display:flex 不能丢：inset:0 + height:auto 之后
+       内部的 flex 分配才是「标签条固定 / 内容区撑满 / 键盘条固定」，
+       少了它键盘条会被内容区挤到屏幕外面去。 */
+    #term.open{display:flex}
+    .term-tab{max-width:132px}
+    .term-tab .nm{max-width:74px}
+    .term-state{display:none}
+    .term-body{padding:4px 0 2px;max-width:none}
+  }
 </style>
 </head>
 <body>
@@ -319,6 +400,7 @@
       <h1>WORKBUDDY</h1>
       <button class="icon-btn" id="themeBtn" title="切换主题">◐</button>
       <button class="icon-btn" id="pvToggle" title="预览面板">▤</button>
+      <button class="icon-btn" id="termToggle" title="远程终端" style="font-size:11px;font-weight:600;letter-spacing:-.5px">&gt;_</button>
       <button class="icon-btn" id="new" title="新建会话">＋</button>
       <button class="icon-btn" id="refresh" title="刷新">↻</button>
     </header>
@@ -355,6 +437,34 @@
         <iframe id="pvFrame" title="预览"></iframe>
       </aside>
     </div>
+    <!-- 远程终端：底部 dock，宽度跟着对话区，不抢预览面板的位置 -->
+    <div id="term">
+      <div class="term-bar">
+        <div class="term-tabs" id="termTabs"></div>
+        <button class="term-btn" id="termNew" title="新建终端">＋</button>
+        <span class="term-state" id="termState"></span>
+        <span class="term-spacer"></span>
+        <button class="term-btn" id="termClear" title="清空当前屏幕（不影响正在跑的命令）">清屏</button>
+        <button class="term-btn" id="termFull" title="放大 / 还原">⤢</button>
+        <button class="term-btn" id="termHide" title="收起（会话保留，下次打开还在）">×</button>
+      </div>
+      <div class="term-body" id="termBody"></div>
+      <div class="term-keys" id="termKeys">
+        <button data-k="esc">Esc</button>
+        <button data-k="tab">Tab</button>
+        <button data-k="ctrl">Ctrl</button>
+        <button data-k="alt">Alt</button>
+        <button data-k="up">↑</button>
+        <button data-k="down">↓</button>
+        <button data-k="left">←</button>
+        <button data-k="right">→</button>
+        <button data-k="ctrlc">⌃C</button>
+        <button data-k="ctrld">⌃D</button>
+        <button data-k="pipe">|</button>
+        <button data-k="dash">-</button>
+        <button data-k="slash">/</button>
+      </div>
+    </div>
     <footer>
       <div class="composer-wrap">
         <div class="attach-row" id="attachRow"></div>
@@ -380,6 +490,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="/md.js"></script>
+<!-- 终端渲染库按需加载：xterm.js 是 290KB，不打开终端的人不该付这份流量。
+     openTerm() 里用 loadTermLibs() 首次注入，之后走缓存。 -->
 <script>
 if (/Linux/.test(navigator.platform || '')) document.documentElement.classList.add('is-linux');
 const $ = (s) => document.querySelector(s);
@@ -1557,6 +1669,463 @@ $('#input').addEventListener('input', (e) => {
   t.style.height = 'auto';
   t.style.height = Math.min(t.scrollHeight, 190) + 'px';
   updateSendBtn();  // 生成期间按钮要在「排队 / 停止」之间切换
+});
+
+/* ── 远程终端 ──────────────────────────────────────────────────
+   链路：xterm.js ← WebSocket ← 桥 ← python PTY ← shell
+
+   两个和 ttyd/gotty 不一样的地方，都是被这个项目的处境逼出来的：
+   1. 会话留在桥进程里（ring buffer 回放），不依赖 tmux。
+      tmux 不是默认装的，为一个终端功能要求用户先 brew install 说不过去。
+   2. 重连按 sid 复用同一个 PTY，所以刷新页面、换设备、断 WiFi 之后
+      正在跑的命令还在，屏幕内容也会补回来。
+*/
+const termState = {
+  tabs: [],          // { uid, sid, name, el, term, fit, ws, alive, exited }
+  active: null,      // 指向 tab 对象本身，不用 sid 索引 ——
+                     // sid 要等后端 ready 回来才确定，用 sid 当键会在
+                     // 「刚建标签、ready 还没到」这段时间里找不到自己
+  open: false,
+  libs: null,        // Promise，避免重复注入
+  ctrlArmed: false,
+  altArmed: false,
+  zoom: 1,
+};
+let termUid = 0;
+
+/** 首次打开终端时才拉 xterm.js —— 290KB 不该让所有人付 */
+function loadTermLibs() {
+  if (termState.libs) return termState.libs;
+  termState.libs = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/vendor/xterm.css';
+    document.head.appendChild(css);
+
+    const add = (src) => new Promise((ok, no) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = ok;
+      s.onerror = () => no(new Error('加载失败: ' + src));
+      document.head.appendChild(s);
+    });
+    add('/vendor/xterm.js')
+      .then(() => add('/vendor/addon-fit.js'))
+      .then(() => resolve())
+      .catch(reject);
+  });
+  return termState.libs;
+}
+
+/** 终端配色跟随页面主题，读 CSS 变量而不是再写一套色板 */
+function termTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n) => cs.getPropertyValue(n).trim();
+  const dark = !document.documentElement.dataset.theme
+    || ['midnight'].includes(document.documentElement.dataset.theme)
+    || document.documentElement.dataset.theme === 'dark';
+  const bg = v('--panel') || '#1a1a1a';
+  const fg = v('--text') || '#ececec';
+  const accent = v('--accent') || '#3b82f6';
+  return {
+    background: bg,
+    foreground: fg,
+    cursor: accent,
+    cursorAccent: bg,
+    selectionBackground: dark ? 'rgba(120,160,255,.30)' : 'rgba(37,99,235,.22)',
+    /* 16 色板。深色用一组降饱和的亮色，浅色主题则要压暗，
+       否则白底上黄色和青色完全看不清。 */
+    black: dark ? '#3b4048' : '#24292f',
+    red: dark ? '#e06c75' : '#cf222e',
+    green: dark ? '#98c379' : '#116329',
+    yellow: dark ? '#e5c07b' : '#953800',
+    blue: dark ? '#61afef' : '#0969da',
+    magenta: dark ? '#c678dd' : '#8250df',
+    cyan: dark ? '#56b6c2' : '#1b7c83',
+    white: dark ? '#dcdfe4' : '#6e7781',
+    brightBlack: dark ? '#5c6370' : '#57606a',
+    brightRed: dark ? '#e8838c' : '#a40e26',
+    brightGreen: dark ? '#b3d18b' : '#1a7f37',
+    brightYellow: dark ? '#f0d197' : '#7d4e00',
+    brightBlue: dark ? '#82c0f5' : '#218bff',
+    brightMagenta: dark ? '#d99ae8' : '#a475f9',
+    brightCyan: dark ? '#7fd0da' : '#3192aa',
+    brightWhite: dark ? '#f2f4f8' : '#8c959f',
+  };
+}
+
+function termTokenQS() {
+  // WS 握手没法带 Authorization 头，只能走 query。拿到 401 时桥会直接关连接，
+  // 前端表现为「已断开」，所以这里必须和 api() 用同一个 token 来源。
+  const t = getToken();
+  return t ? '&token=' + encodeURIComponent(t) : '';
+}
+
+function termActiveTab() {
+  return termState.active && termState.tabs.includes(termState.active) ? termState.active : null;
+}
+
+function setTermState(txt, bad) {
+  const el = $('#termState');
+  el.textContent = txt || '';
+  el.classList.toggle('bad', !!bad);
+}
+
+function renderTermTabs() {
+  const box = $('#termTabs');
+  box.textContent = '';
+  termState.tabs.forEach((t) => {
+    const b = document.createElement('div');
+    b.className = 'term-tab' + (t === termState.active ? ' on' : '');
+
+    const dot = document.createElement('i');
+    dot.className = 'st ' + (t.exited ? 'dead' : (t.alive ? 'live' : ''));
+
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = t.name;
+
+    const x = document.createElement('i');
+    x.className = 'x';
+    x.textContent = '×';
+    x.onclick = (e) => { e.stopPropagation(); closeTermTab(t); };
+
+    b.append(dot, nm, x);
+    b.onclick = () => activateTermTab(t);
+    box.appendChild(b);
+  });
+}
+
+/** 标签页切换 = 切换可见的 xterm 实例。
+ *  多个实例共用同一个 .term-body 会互相踩尺寸，所以每个 tab 一个 <div>，
+ *  切的时候只显示一个 —— 和 IDE 里切终端标签一个意思。 */
+function activateTermTab(tab) {
+  if (!tab || !termState.tabs.includes(tab)) return;
+  termState.active = tab;
+  termState.tabs.forEach((t) => {
+    if (t.el) t.el.style.display = t === tab ? '' : 'none';
+  });
+  renderTermTabs();
+  // 显示出来才能量到真实尺寸，fit 必须在这之后
+  requestAnimationFrame(() => {
+    try { tab.fit && tab.fit.fit(); } catch {}
+    try { tab.term && tab.term.focus(); } catch {}
+    // 第一次激活时才连：这时候 cols/rows 是真的了。
+    // 已经连过（或连过又断了）就不重复建，交给 onclose 里的重连逻辑。
+    if (!tab.ws) connectTerm(tab);
+    else syncTermSize(tab);
+  });
+  if (tab.exited) setTermState('已退出' + (tab.exitCode != null ? `（${tab.exitCode}）` : ''), true);
+  else setTermState(tab.alive ? '已连接' : (tab.ws ? '连接中…' : '准备中…'), !tab.alive && !!tab.ws);
+}
+
+/** 把 xterm 算出来的 cols/rows 告诉后端 PTY */
+function syncTermSize(tab) {
+  if (!tab || !tab.term || !tab.ws || tab.ws.readyState !== 1) return;
+  const { cols, rows } = tab.term;
+  if (cols === tab._cols && rows === tab._rows) return;
+  tab._cols = cols; tab._rows = rows;
+  try { tab.ws.send(JSON.stringify({ type: 'resize', cols, rows })); } catch {}
+}
+
+function makeTermTab(sid, name) {
+  const el = document.createElement('div');
+  el.className = 'term-el';
+  el.style.cssText = 'width:100%;height:100%;display:none';
+  $('#termBody').appendChild(el);
+
+  const term = new Terminal({
+    /* 字体栈顺序有讲究。`ui-monospace` 看着最"现代"，但它在部分
+       Chromium 版本/配置里会解析失败并回退到**非等宽**的默认字体 ——
+       实测每字符 11px（Menlo 是 7.5px），结果 980px 的容器只排出
+       38 列，内容全挤在左边一小块，右边一片空。
+       把确定存在的等宽字体排在前面，`ui-monospace` 放最后当锦上添花。 */
+    fontFamily: 'SFMono-Regular, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace',
+    fontSize: 13,
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    cursorBlink: true,
+    cursorStyle: 'bar',
+    scrollback: 3000,
+    allowProposedApi: true,
+    theme: termTheme(),
+    // 触屏上 selection 更容易误触，用长按选词而不是拖选
+    rightClickSelectsWord: true,
+    macOptionIsMeta: true,
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(el);
+
+  const tab = { uid: ++termUid, sid, name, el, term, fit, ws: null, alive: false, exited: false, _cols: 0, _rows: 0 };
+  termState.tabs.push(tab);
+
+  // 键盘 → 二进制帧。终端输入必须是裸字节，
+  // 走文本帧再 JSON 包一层会把 0x00-0x1f 的控制字符弄坏。
+  term.onData((d) => {
+    if (!tab.ws || tab.ws.readyState !== 1) return;
+    try { tab.ws.send(new TextEncoder().encode(d)); } catch {}
+  });
+  term.onResize(() => syncTermSize(tab));
+
+  // 点终端里随便一处都该把焦点给回终端，否则敲键盘没反应
+  el.addEventListener('mousedown', () => setTimeout(() => term.focus(), 0));
+
+  // 这里**不能**立刻连。元素还是 display:none 的时候 xterm 量到的是
+  // 0×0，算出来的 cols 会退到最小值，PTY 用 2 列启动 —— shell 会把每个字
+  // 都换行，屏幕上一片竖排乱码，而且这段垃圾已经进了 scrollback 洗不掉。
+  // 连接统一交给 activateTermTab：显示出来 → fit 拿到真实行列 → 再连。
+  return tab;
+}
+
+function connectTerm(tab) {
+  const cols = Math.max(20, tab.term.cols || 80);
+  const rows = Math.max(5, tab.term.rows || 24);
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/terminal/ws?cols=${cols}&rows=${rows}`
+    + (tab.sid ? '&sid=' + encodeURIComponent(tab.sid) : '')
+    + termTokenQS();
+
+  let ws;
+  try { ws = new WebSocket(url); } catch (e) {
+    setTermState('无法连接：' + e.message, true);
+    return;
+  }
+  ws.binaryType = 'arraybuffer';
+  tab.ws = ws;
+  tab.exited = false;
+
+  ws.onopen = () => {
+    tab.alive = true;
+    setTermState('已连接');
+    renderTermTabs();
+  };
+
+  ws.onmessage = (ev) => {
+    if (typeof ev.data === 'string') {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type === 'ready') {
+        // 后端给了 sid（首次连接用的临时 id，或原会话已死换了新的）
+        if (m.sid) tab.sid = m.sid;
+        if (m.reused) setTermState('已恢复上次会话');
+        requestAnimationFrame(() => { try { tab.fit.fit(); } catch {} syncTermSize(tab); });
+      } else if (m.type === 'exit') {
+        tab.exited = true;
+        tab.exitCode = m.code;
+        setTermState('已退出' + (m.code != null ? `（${m.code}）` : ''), true);
+        renderTermTabs();
+        tab.term.write(`\r\n\x1b[2m[进程已退出，代码 ${m.code}。按 ↵ 或点 ＋ 新开一个]\x1b[0m\r\n`);
+      }
+      return;
+    }
+    // 二进制 = PTY 原始输出，直接喂给终端
+    tab.term.write(new Uint8Array(ev.data));
+  };
+
+  ws.onclose = () => {
+    tab.alive = false;
+    renderTermTabs();
+    if (tab.exited) return;
+    setTermState('连接已断开', true);
+    // 退避重连：桥重启、隧道重连都会断，自动接回来比让用户点刷新好
+    if (tab._retry == null) tab._retry = 0;
+    tab._retry++;
+    if (tab._retry > 6) {
+      setTermState('连接失败，点 ＋ 重开', true);
+      return;
+    }
+    const delay = Math.min(8000, 400 * Math.pow(1.7, tab._retry));
+    tab.term.write(`\r\n\x1b[2m[连接断开，${(delay / 1000).toFixed(1)}s 后重连…]\x1b[0m\r\n`);
+    tab._timer = setTimeout(() => {
+      if (!termState.tabs.includes(tab)) return;
+      connectTerm(tab);
+    }, delay);
+  };
+
+  ws.onerror = () => {};
+}
+
+function closeTermTab(tab) {
+  if (!tab) return;
+  clearTimeout(tab._timer);
+  try { tab.ws && tab.ws.close(); } catch {}
+  // 主动关标签 = 真的结束会话，不是断开连接。否则后台会挂着 shell
+  fetch('/terminal/sessions/' + encodeURIComponent(tab.sid) + '/kill', {
+    method: 'POST',
+    headers: getToken() ? { Authorization: 'Bearer ' + getToken() } : {},
+  }).catch(() => {});
+  try { tab.term.dispose(); } catch {}
+  tab.el.remove();
+  const i = termState.tabs.indexOf(tab);
+  if (i >= 0) termState.tabs.splice(i, 1);
+  if (termState.active === tab) {
+    const next = termState.tabs[termState.tabs.length - 1];
+    termState.active = next || null;
+    if (next) activateTermTab(next);
+    else renderTermTabs();
+  }
+  if (!termState.tabs.length) hideTerm();
+}
+
+async function openTerm() {
+  if (termState.open && termState.tabs.length) {
+    activateTermTab(termActiveTab() || termState.tabs[0]);
+    return;
+  }
+  termState.open = true;
+  $('#term').classList.add('open');
+  watchTermResize();
+  setTermState('加载终端组件…');
+  try {
+    await loadTermLibs();
+  } catch (e) {
+    setTermState('组件加载失败：' + e.message, true);
+    return;
+  }
+  // 刷新后先问后端还有没有活着的会话，有就直接接回来。
+  // 只接最近的一个：标签是用户可见的东西，刷新一次多四个标签比丢失会话
+  // 更让人困惑。要新开就点 ＋。
+  let restored = false;
+  try {
+    const list = await api('/terminal/sessions');   // api() 已经剥过 .value
+    const alive = (Array.isArray(list) ? list : [])
+      .filter((s) => !s.exited)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    if (alive.length) {
+      const s = alive[0];
+      const tab = makeTermTab(s.sid, '终端 1');
+      tab.sid = s.sid;
+      restored = true;
+    }
+  } catch {}
+  if (!restored) makeTermTab(null, '终端 1');
+  const first = termState.tabs[0];
+  activateTermTab(first);
+  // 等一帧让 dock 完成布局，否则 fit 拿到的高度是 0
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    termState.tabs.forEach((t) => { try { t.fit.fit(); syncTermSize(t); } catch {} });
+  }));
+}
+
+function hideTerm() {
+  $('#term').classList.remove('open');
+  termState.open = false;
+}
+
+$('#termToggle').onclick = () => {
+  if ($('#term').classList.contains('open')) hideTerm();
+  else openTerm().catch((e) => toast(e.message));
+};
+$('#termHide').onclick = hideTerm;
+$('#termNew').onclick = () => {
+  if (!termState.open) { openTerm(); return; }
+  const tab = makeTermTab(null, '终端 ' + (termState.tabs.length + 1));
+  renderTermTabs();
+  activateTermTab(tab);
+};
+$('#termClear').onclick = () => {
+  const t = termActiveTab();
+  if (t) { t.term.clear(); t.term.focus(); }
+};
+$('#termFull').onclick = () => {
+  const el = $('#term');
+  const big = el.style.height === '86vh';
+  el.style.height = big ? '' : '86vh';
+  $('#termFull').textContent = big ? '⤢' : '⤡';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const t = termActiveTab();
+    if (t) { try { t.fit.fit(); syncTermSize(t); } catch {} }
+  }));
+};
+
+// 触屏键盘工具条。Ctrl / Alt 做成「粘滞」：点一下亮起来，
+// 再敲下一个键时带上修饰符然后自动熄灭 —— 和手机输入法的行为一致。
+$('#termKeys').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const tab = termActiveTab();
+  if (!tab) return;
+  const k = b.dataset.k;
+  if (!tab.ws || tab.ws.readyState !== 1) return;
+  const send = (s) => { try { tab.ws.send(new TextEncoder().encode(s)); } catch {} };
+
+  if (k === 'ctrl') {
+    termState.ctrlArmed = !termState.ctrlArmed;
+    termState.altArmed = false;
+    b.classList.toggle('armed', termState.ctrlArmed);
+    syncArmed();
+    tab.term.focus();
+    return;
+  }
+  if (k === 'alt') {
+    termState.altArmed = !termState.altArmed;
+    termState.ctrlArmed = false;
+    b.classList.toggle('armed', termState.altArmed);
+    syncArmed();
+    tab.term.focus();
+    return;
+  }
+
+  const MAP = {
+    esc: '\x1b', tab: '\t',
+    up: '\x1b[A', down: '\x1b[B', right: '\x1b[C', left: '\x1b[D',
+    ctrlc: '\x03', ctrld: '\x04',
+    pipe: '|', dash: '-', slash: '/',
+  };
+  let s = MAP[k];
+  if (s == null) return;
+  // 粘滞修饰符只对单字符生效（方向键本身就是完整序列，不能再加前缀）
+  if (s.length === 1 && termState.ctrlArmed) s = String.fromCharCode(s.toUpperCase().charCodeAt(0) & 0x1f);
+  else if (s.length === 1 && termState.altArmed) s = '\x1b' + s;
+  send(s);
+  if (termState.ctrlArmed || termState.altArmed) {
+    termState.ctrlArmed = false;
+    termState.altArmed = false;
+    syncArmed();
+  }
+  tab.term.focus();
+});
+function syncArmed() {
+  document.querySelectorAll('#termKeys button[data-k="ctrl"], #termKeys button[data-k="alt"]')
+    .forEach((b) => b.classList.toggle('armed', b.dataset.k === 'ctrl' ? termState.ctrlArmed : termState.altArmed));
+}
+
+// dock 尺寸变了要重新算行列，否则换窗口大小后进度条 / vim 会画错位
+let termRO = null;
+function watchTermResize() {
+  if (termRO) return;
+  const body = $('#termBody');
+  if (!('ResizeObserver' in window)) {
+    addEventListener('resize', () => { const t = termActiveTab(); if (t) { try { t.fit.fit(); syncTermSize(t); } catch {} } });
+    return;
+  }
+  let raf = 0;
+  termRO = new ResizeObserver(() => {
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => {
+      const t = termActiveTab();
+      if (!t) return;
+      try { t.fit.fit(); syncTermSize(t); } catch {}
+    });
+  });
+  termRO.observe(body);
+}
+
+// 主题切换后终端的 16 色板要跟着换，否则浅色主题下终端还是黑底
+const _origApplyTheme = applyTheme;
+applyTheme = function (id) {
+  _origApplyTheme(id);
+  const th = termTheme();
+  termState.tabs.forEach((t) => { try { t.term.options.theme = th; } catch {} });
+};
+
+// Ctrl/⌘ + ` 打开终端（IDE 的通用快捷键），和浏览器书签栏等不冲突
+addEventListener('keydown', (e) => {
+  if (e.key === '`' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    if ($('#term').classList.contains('open')) hideTerm();
+    else openTerm().catch((err) => toast(err.message));
+  }
 });
 
 (async () => {
