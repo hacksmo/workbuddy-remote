@@ -15,7 +15,9 @@
 # 环境变量：
 #   WB_CDP_PORT     CDP 端口，默认 9333
 #   WB_PORT         桥端口，默认 8797
-#   WB_HOST         桥监听地址，默认 127.0.0.1（要公网/隧道访问用它，见 deploy/）
+#   WB_HOST         桥监听地址，默认 auto（回环 + 所有局域网 IP）
+#                   也可显式写 127.0.0.1,192.168.1.5（要公网/隧道访问见 deploy/）
+#   WB_LAN          设 0 关掉局域网监听，只留回环
 #   WB_TOKEN        访问令牌，不设则自动生成并保存到 ~/.config/workbuddy-remote/token
 #   WB_APP          手工指定 WorkBuddy 可执行文件路径
 
