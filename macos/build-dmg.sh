@@ -193,6 +193,15 @@ hdiutil create \
   zip -qry "$DIST/WorkBuddy-Remote-${VERSION}.zip" "$APP_NAME.app"
 ) 2>/dev/null || true
 
+# 再复制一份不带版本号的。
+# 用途：README 里写 releases/latest/download/WorkBuddy-Remote.dmg 就能永久有效，
+# 不用每次发版都改文档 —— 带版本号的名字下次发版就 404 了。
+#
+# 每次 Release 都要把这两个固定名当附件上传，覆盖上一版的同名文件。
+cp -f "$DMG" "$DIST/WorkBuddy-Remote.dmg"
+[ -f "$DIST/WorkBuddy-Remote-${VERSION}.zip" ] && \
+  cp -f "$DIST/WorkBuddy-Remote-${VERSION}.zip" "$DIST/WorkBuddy-Remote.zip"
+
 rm -rf "$STAGE"
 
 # ── 汇报 ────────────────────────────────────────────────────────────
@@ -200,5 +209,6 @@ printf '\n完成\n'
 ls -lh "$DMG" | awk '{printf "  DMG  %s  %s\n", $5, $9}'
 [ -f "$DIST/WorkBuddy-Remote-${VERSION}.zip" ] && \
   ls -lh "$DIST/WorkBuddy-Remote-${VERSION}.zip" | awk '{printf "  ZIP  %s  %s\n", $5, $9}'
-printf '\n  架构：%s\n' "$ARCH"
+printf '\n  固定名（README 用）：WorkBuddy-Remote.dmg / .zip\n'
+printf '  架构：%s\n' "$ARCH"
 printf '  安装：双击 DMG，把应用拖进「应用程序」\n'
