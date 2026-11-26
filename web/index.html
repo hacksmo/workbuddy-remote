@@ -903,11 +903,15 @@ async function pollMessages(full) {
 
     state.total = v.total;
     const items = state.messages;
+    const wasRunning = state.running;
     state.running = items.some((r) => isRunning(r.state));
     updateSendBtn();
     renderMessages(items);
-    // 刚生成完 → 若有排队消息，接着发下一条
-    if (!state.running) drainQueue();
+    // 队列由 WorkBuddy 自己驱动，网页端只负责把最新状态读回来。
+    // 生成中节流拉取就够；生成刚结束必须拉（可能有条目已被消费）
+    if (wasRunning !== state.running || queuePollDue()) {
+      fetchQueue().then(renderQueueCard);
+    }
   } catch (e) {
     $('#hintText').textContent = /生成|超时/.test(e.message) ? '会话正在生成，稍后自动刷新' : '读取失败：' + e.message;
   } finally {
@@ -921,6 +925,9 @@ async function openSession(id) {
   state.lastSig = '';
   state.messages = [];
   state.total = null;
+  // 切会话先清掉上一个会话的队列卡片，避免串会话显示
+  queueCache = { items: [], paused: false, supported: false };
+  queueSeq++;
   renderQueueCard();
   // 切会话一律从底部开始看。若不重置，新会话初始 scrollTop=0 会被
   // atBottom() 判成「用户在看历史」，于是停在顶部。
@@ -930,6 +937,8 @@ async function openSession(id) {
   updateSendBtn();
   renderList();
   await pollMessages();
+  // 这个会话可能本来就有待发队列（比如在桌面端排的），一并显示出来
+  fetchQueue().then(renderQueueCard);
   const msgs = $('#msgs');
   const bottom = () => { if (state.stick) stickBottom(msgs); };
   bottom();
@@ -965,78 +974,74 @@ async function openSession(id) {
 // ══════════════════════════════════════════════════════════════════
 //  排队消息
 // ══════════════════════════════════════════════════════════════════
-// 桌面端的行为是：会话正在生成时，输入框仍可发送，消息进队列，等当前
-// 回复结束后依次发出；队列显示成卡片，可以拖动排序、编辑、删除。
+// 桌面端的行为是：会话正在生成时输入框仍可发送，消息进队列，等当前回复
+// 结束后依次发出；队列显示成卡片，可以拖动排序、删除、立即发送。
 //
-// 网页端原来做不到这件事 —— 生成期间发送按钮直接变成「停止」，用户
-// 想追加一句只能等。这里用纯前端的乐观队列实现同样的体验：
-//   · 队列存在 localStorage，按会话隔离，刷新不丢
-//   · 记住会话 id，切换回来还在
-//   · 不依赖 WorkBuddy 内部 API，所以升级桌面端也不会坏
-const QUEUE_KEY = 'wb.queue';
+// 这里**不再自己维护队列** —— 消息照样走 /send 交给 WorkBuddy，
+// 由它自己的 queueManager 串行排队。网页端只是把这同一份队列读回来渲染。
+//
+// 为什么必须这样（曾经踩过坑）：
+//   早先版本把消息拦在浏览器 localStorage 里，生成结束后才发。结果是
+//   被控端桌面端完全看不到网页排队的消息 —— 因为消息根本没到后端。
+//   现在两边共用一份队列，桌面端能看到，网页端也能操作同一批条目。
+//   · 队列真相在后端，网页端只读 + 发指令
+//   · 刷新页面、换设备、桌面端手动删改，看到的都一致
 
-function loadQueues() {
-  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '{}') || {}; } catch { return {}; }
-}
-function saveQueues(all) {
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(all)); } catch {}
-}
-function curQueue() {
-  const sid = state.current?.id;
-  if (!sid) return [];
-  return loadQueues()[sid] || [];
-}
-function setCurQueue(items) {
-  const sid = state.current?.id;
-  if (!sid) return;
-  const all = loadQueues();
-  if (items.length) all[sid] = items;
-  else delete all[sid];
-  saveQueues(all);
-  renderQueueCard();
-}
-function enqueue(item) {
-  const items = curQueue();
-  items.push(item);
-  setCurQueue(items);
+// 每次操作后递增，用来丢弃过期的队列快照（避免慢请求覆盖新状态）
+let queueSeq = 0;
+// 最近一次拿到的队列快照，供渲染使用
+let queueCache = { items: [], paused: false, supported: false };
+// 上次拉队列的时间，用来限流（生成中不必每个轮询周期都拉）
+let queueFetchedAt = 0;
+function queuePollDue() {
+  return Date.now() - queueFetchedAt > 4000;
 }
 
-// 生成结束 → 自动发队首。一次只发一条，发完等状态变 idle 再来。
-let draining = false;
-async function drainQueue() {
-  if (draining || state.running || !state.current) return;
-  const items = curQueue();
-  if (!items.length) return;
-  draining = true;
-  const [next, ...rest] = items;
-  setCurQueue(rest);
+async function fetchQueue() {
+  if (!state.current) return queueCache;
+  const my = ++queueSeq;
   try {
-    await api(`/sessions/${encodeURIComponent(state.current.id)}/send`, {
+    const r = await api(`/sessions/${encodeURIComponent(state.current.id)}/queue`);
+    if (my !== queueSeq) return queueCache; // 有更新的请求在飞，这次结果作废
+    queueCache = r || { items: [], paused: false, supported: false };
+    queueFetchedAt = Date.now();
+  } catch {
+    if (my === queueSeq) queueCache = { items: [], paused: false, supported: false };
+  }
+  return queueCache;
+}
+
+async function queueOp(op, itemId, index) {
+  if (!state.current) return;
+  // 乐观更新：本地先动，立刻重绘，不用等网络
+  queueSeq++; // 让在飞的 fetchQueue 结果作废
+  const items = queueCache.items.slice();
+  const at = items.findIndex((x) => x.id === itemId);
+  if (op === 'delete' && at >= 0) items.splice(at, 1);
+  if (op === 'move' && at >= 0) {
+    const [m] = items.splice(at, 1);
+    items.splice(Math.max(0, Math.min(index, items.length)), 0, m);
+  }
+  queueCache = { ...queueCache, items };
+  renderQueueCard();
+  try {
+    await api(`/sessions/${encodeURIComponent(state.current.id)}/queue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blocks: next.blocks }),
+      body: JSON.stringify({ op, itemId, index }),
     });
-    state.stick = true;
-    await pollMessages();
   } catch (e) {
-    const msg = String((e && e.message) || e);
-    // 会话已经不存在了 → 这条消息发不出去也不该留着，否则每次 poll 都报错
-    if (/not found|不存在|404/i.test(msg)) {
-      toast('会话已不存在，排队消息已丢弃');
-    } else {
-      // 其他失败（网络抖动等）→ 塞回队首，别让用户的消息凭空消失
-      setCurQueue([next, ...curQueue()]);
-      toast('排队消息发送失败：' + msg);
-    }
-  } finally {
-    draining = false;
+    toast('队列操作失败：' + String((e && e.message) || e));
   }
+  // 无论成败都以服务端为准再拉一次
+  await fetchQueue();
+  renderQueueCard();
 }
 
 // 队列卡片：挂在输入框正上方，跟桌面端位置一致
 function renderQueueCard() {
   let card = $('#dqueue');
-  const items = curQueue();
+  const items = queueCache.items || [];
   if (!items.length) {
     if (card) card.remove();
     return;
@@ -1060,7 +1065,9 @@ function renderQueueCard() {
   const clear = document.createElement('button');
   clear.textContent = '清空';
   clear.title = '清空队列';
-  clear.onclick = () => setCurQueue([]);
+  clear.onclick = () => {
+    for (const it of items.slice()) queueOp('delete', it.id);
+  };
   h.appendChild(clear);
   card.appendChild(h);
 
@@ -1078,13 +1085,14 @@ function renderQueueCard() {
 
     const body = document.createElement('div');
     body.className = 'body';
-    const text = (it.blocks || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-    const imgs = (it.blocks || []).filter((b) => b.type === 'image');
+    const blocks = it.blocks || [];
+    const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const imgs = blocks.filter((b) => b.type === 'image');
     if (text) body.appendChild(document.createTextNode(text));
     for (const im of imgs) {
       const d = document.createElement('span');
       d.className = 'dq-img';
-      d.textContent = '🖼 ' + ((im._meta && im._meta.filename) || '图片');
+      d.textContent = '🖼 ' + (im.name || '图片');
       body.appendChild(d);
     }
     if (!text && !imgs.length) body.textContent = '(空消息)';
@@ -1095,31 +1103,21 @@ function renderQueueCard() {
     n.textContent = '#' + (idx + 1);
     row.appendChild(n);
 
-    // 编辑：把内容放回输入框，从队列里摘掉
-    const edit = document.createElement('button');
-    edit.textContent = '✎';
-    edit.title = '编辑（放回输入框）';
-    edit.onclick = () => {
-      const ta = $('#input');
-      ta.value = text;
-      ta.style.height = 'auto';
-      ta.style.height = Math.min(ta.scrollHeight, 190) + 'px';
-      ta.focus();
-      const rest = curQueue();
-      rest.splice(idx, 1);
-      setCurQueue(rest);
+    // 立即发送：打断当前回复，优先发这条
+    const now = document.createElement('button');
+    now.textContent = '▶';
+    now.title = '立即发送（打断当前回复）';
+    now.onclick = () => {
+      if (!confirm('立即发送会中断当前回复，确定吗？')) return;
+      queueOp('sendNow', it.id);
     };
-    row.appendChild(edit);
+    row.appendChild(now);
 
     const del = document.createElement('button');
     del.className = 'del';
     del.textContent = '×';
     del.title = '删除';
-    del.onclick = () => {
-      const rest = curQueue();
-      rest.splice(idx, 1);
-      setCurQueue(rest);
-    };
+    del.onclick = () => queueOp('delete', it.id);
     row.appendChild(del);
 
     // 拖拽排序
@@ -1136,10 +1134,9 @@ function renderQueueCard() {
       row.classList.remove('over');
       const from = Number(e.dataTransfer.getData('text/plain'));
       if (Number.isNaN(from) || from === idx) return;
-      const arr = curQueue();
-      const [moved] = arr.splice(from, 1);
-      arr.splice(idx, 0, moved);
-      setCurQueue(arr);
+      const movedId = items[from] && items[from].id;
+      if (!movedId) return;
+      queueOp('move', movedId, idx);
     };
 
     card.appendChild(row);
@@ -1162,14 +1159,26 @@ async function send() {
     });
   }
 
-  // 正在生成 → 进队列，不打断当前回复（桌面端就是这个行为）
+  // 正在生成 → 照样走 /send 交给 WorkBuddy，由它自己排队
+  // （不能拦在浏览器里：那样桌面端永远看不到网页发的消息）
   if (state.running) {
-    enqueue({ blocks, at: Date.now() });
     ta.value = '';
     ta.style.height = 'auto';
     pendingImages = [];
     renderAttach();
-    toast('已加入队列，当前回复结束后发送');
+    try {
+      await api(`/sessions/${encodeURIComponent(state.current.id)}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blocks }),
+      });
+      await fetchQueue();
+      renderQueueCard();
+      toast('已加入队列，当前回复结束后自动发送');
+    } catch (e) {
+      toast('排队失败：' + String((e && e.message) || e));
+      ta.value = text;
+    }
     return;
   }
 
@@ -1217,10 +1226,10 @@ async function removeSession(id, title) {
   if (!confirm('彻底删除会话「' + (title || id) + '」？此操作不可恢复。')) return;
   try {
     await api(`/sessions/${encodeURIComponent(id)}/delete`, { method: 'POST' });
-    // 会话没了，它的排队消息也没有意义了 —— 不清掉会永久占着 localStorage
-    const q = loadQueues();
-    if (q[id]) { delete q[id]; saveQueues(q); }
+    // 会话删了，队列也随之消失（队列在后端，不用本地清理）
     if (state.current?.id === id) {
+      queueCache = { items: [], paused: false, supported: false };
+      queueSeq++;
       state.current = null;
       clearTimeout(state.timer);
       state.lastSig = '';
@@ -1451,7 +1460,6 @@ $('#input').addEventListener('input', (e) => {
 
 (async () => {
   probeNet();  // 不 await：链路标识不该拖慢首屏
-  renderQueueCard();  // 上次没发完的排队消息
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
     renderList();

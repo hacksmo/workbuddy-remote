@@ -196,3 +196,71 @@ export function probeTypes(id) {
     return types;
   })();
 }
+/**
+ * 读会话的待发送队列（WorkBuddy 自己的 queueManager）。
+ *
+ * 这就是桌面端「排队选项卡」的数据源 —— 消息经 sendPrompt 交给 WorkBuddy
+ * 后由它内部串行排队，这里只是把同一份队列读出来给网页端渲染。
+ * 网页端不再自己维护队列，所以两边永远一致。
+ */
+export function readQueue(id) {
+  return (async () => {
+    const c = await wb.conversations.get(id);
+    const q = c.queueManager;
+    // 没有 queueManager（老版本 / 非 task 会话）→ 当成空队列，不要报错
+    if (!q || typeof q.items !== 'function') {
+      return { items: [], paused: false, supported: false };
+    }
+    let raw = [];
+    try {
+      raw = q.items() || [];
+    } catch (e) {
+      return { items: [], paused: false, supported: false };
+    }
+    const items = raw.map((it) => {
+      const blocks = Array.isArray(it.content) ? it.content : [];
+      return {
+        id: it.id,
+        seq: it.acceptedSequence,
+        at: it.acceptedAt,
+        blocks: blocks.map((b) => {
+          if (b.type === 'text') return { type: 'text', text: String(b.text || '') };
+          if (b.type === 'image') {
+            return {
+              type: 'image',
+              mimeType: b.mimeType || '',
+              name: (b._meta && b._meta.filename) || '',
+            };
+          }
+          return { type: b.type || 'unknown' };
+        }),
+      };
+    });
+    let paused = false;
+    try {
+      paused = !!q.paused;
+    } catch (e) {}
+    return { items, paused, supported: true };
+  })();
+}
+
+/**
+ * 操作队列：move / delete / sendNow / pause / resume。
+ * 直接在 WorkBuddy 的 queueManager 上调用，桌面端会同步变化。
+ */
+export function mutateQueue(id, op, itemId, index) {
+  return (async () => {
+    const c = await wb.conversations.get(id);
+    const q = c.queueManager;
+    if (!q) throw new Error('该会话不支持队列操作');
+    if (op === 'move') await q.move(itemId, index);
+    else if (op === 'delete') await q.delete(itemId);
+    else if (op === 'sendNow') await q.sendNow(itemId);
+    else if (op === 'pause') await q.pause(itemId);
+    else if (op === 'resume') await q.resume();
+    else throw new Error('未知队列操作: ' + op);
+    // 队列变更是异步落到后端的，等一下再读，避免读到旧快照
+    await new Promise((r) => setTimeout(r, 180));
+    return { ok: true };
+  })();
+}

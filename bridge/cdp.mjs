@@ -20,7 +20,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 // 注入到页面里执行的代码放在单独文件，靠 fn.toString() 传过去，
 // 避免模板字符串里嵌套转义（曾导致 /messages 整体 500）
-import { collectMessages, answerPending, probeTypes } from './inject.mjs';
+import { collectMessages, answerPending, probeTypes, readQueue, mutateQueue } from './inject.mjs';
 import { parseArgs } from 'node:util';
 
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'web');
@@ -185,10 +185,36 @@ async function probe() {
   cdp.close();
 }
 
+/** 本机的局域网 IPv4（RFC1918），用于 --host auto */
+function detectLanIPs() {
+  const out = [];
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const ni of ifaces[name] || []) {
+      if (ni.family !== 'IPv4' && ni.family !== 4) continue;
+      if (ni.internal) continue;
+      const ip = ni.address;
+      // 只认真正的局域网段；排除 Tailscale(100.x) / Shadowrocket TUN(198.18/15)
+      if (/^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip)) {
+        if (!out.includes(ip)) out.push(ip);
+      }
+    }
+  }
+  return out;
+}
+
 /** HTTP 服务：给浏览器用 */
 async function serve() {
   // 监听地址集合：逗号分隔，可含 127.0.0.1 与局域网 IP
-  const HOSTS = String(values.host || '127.0.0.1').split(',').map((h) => h.trim()).filter(Boolean);
+  // --host auto → 自动探测（避免写死 IP：换了网络就监听失败，还得手改 plist）
+  let rawHost = String(values.host || '127.0.0.1').trim();
+  if (rawHost === 'auto') {
+    const ips = detectLanIPs();
+    rawHost = ['127.0.0.1', ...ips].join(',');
+    if (ips.length) console.log('自动探测到局域网地址:', ips.join(', '));
+    else console.log('未探测到局域网地址，只监听本机');
+  }
+  const HOSTS = rawHost.split(',').map((h) => h.trim()).filter(Boolean);
   // 其中真正对局域网开放的（用于 /info 上报给控制端做直连探测）
   const LAN_HOSTS = HOSTS.filter((h) => !['127.0.0.1', 'localhost', '::1', '0.0.0.0', '::'].includes(h));
 
@@ -551,6 +577,29 @@ async function serve() {
         const id = decodeURIComponent(mProbe[1]);
         const cdp = await getConn();
         const value = await cdp.evaluateFn(probeTypes, id);
+        return send(200, { ok: true, value });
+      }
+
+      // 读会话的待发送队列 —— 桌面端「排队选项卡」的同一份数据
+      const mQueue = url.pathname.match(/^\/sessions\/([^/]+)\/queue$/);
+      if (mQueue && req.method === 'GET') {
+        const id = decodeURIComponent(mQueue[1]);
+        const cdp = await getConn();
+        const value = await cdp.evaluateFn(readQueue, id);
+        return send(200, { ok: true, value });
+      }
+      // 操作队列：move / delete / sendNow / pause / resume
+      if (mQueue && req.method === 'POST') {
+        const id = decodeURIComponent(mQueue[1]);
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const op = String(body.op || '');
+        if (!['move', 'delete', 'sendNow', 'pause', 'resume'].includes(op)) {
+          return send(400, { error: 'op 必须是 move/delete/sendNow/pause/resume' });
+        }
+        const cdp = await getConn();
+        const value = await cdp.evaluateFn(
+          mutateQueue, id, op, body.itemId == null ? null : String(body.itemId), body.index == null ? 0 : Number(body.index),
+        );
         return send(200, { ok: true, value });
       }
 

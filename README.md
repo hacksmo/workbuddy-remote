@@ -169,6 +169,9 @@ workbuddy --public   # 强制走公网（怀疑直连有问题时对比用）
 - **不能「公网页面内部切局域网」**。HTTPS 页面里请求 `http://192.168.x.x` 会被
   浏览器按混合内容拦掉，所以只能「先探测局域网源，失败就整页跳公网」。
 - **兼容 mDNS**。被控端同时上报 `xxx.local`，改名换 IP 后 Bonjour 还能解析到。
+- **被控端自己探测，不要写死 IP**。被控端用 `--host auto`（开机自启的默认配置）自己枚举
+  网卡上的 RFC1918 地址。写死 IP 的后果是换个网络就 `EADDRNOTAVAIL`，只剩本机可访问，
+  而 LaunchAgent 的 `KeepAlive` 还会让它反复重启刷日志。
 
 ## 从外网访问（可选）
 
@@ -249,6 +252,8 @@ macOS 网卡名一般是 `en0`，Linux 用 `ip route get 1.1.1.1` 看。
 | 读消息 | `(await wb.conversations.get(id)).requestEntries()` |
 | 发消息 | `(await wb.conversations.get(id)).sendPrompt(blocks)` |
 | 中断 | `(await wb.conversations.get(id)).cancel()` |
+| 读队列 | `(await wb.conversations.get(id)).queueManager.items()` |
+| 排队操作 | `.queueManager.move(id, idx)` / `.delete(id)` / `.sendNow(id)` |
 | 切模型 | `wb.invoke('wb:conversations:configSetModel', id, model)` |
 
 几个踩过的坑，改代码时会碰到：
@@ -257,6 +262,23 @@ macOS 网卡名一般是 `en0`，Linux 用 `ip route get 1.1.1.1` 看。
 - **`create()` 返回句柄不是 id** —— 要建会话得用创建前后 `list()` 的差集拿 id
 - **`requests()` 在流式期间会阻塞** —— 读消息用 `requestEntries()`
 - **并发 evaluate 会串线** —— CDP 连接必须共享，且 evaluate 要串行排队
+- **排队不要自己在浏览器里做** —— 见下节
+
+### 排队消息必须走 `/send`
+
+会话正在生成时，桌面端的输入框仍可发送，消息进队列等当前回复结束后依次发出。
+
+网页端一开始想用 localStorage 自己维护队列（生成结束后再逐条发），**这是错的**：
+消息被拦在浏览器里，压根没到 WorkBuddy，于是被控端桌面端完全看不到网页排队的消息。
+
+正确做法是**照样调 `/send`** —— `sendPrompt()` 在生成期间会立即返回（约 60ms），
+由 WorkBuddy 内部串行链排队。网页端只通过 `/queue` 把同一份队列读回来渲染，
+两边共用一份真相，桌面端能看见，网页端也能排序 / 删除 / 立即发送。
+
+| 操作 | 接口 |
+|---|---|
+| 读队列 | `GET /sessions/:id/queue` → `{items:[{id,seq,blocks}],paused,supported}` |
+| 排序 / 删除 / 立即发 | `POST /sessions/:id/queue` `{op:'move'|'delete'|'sendNow', itemId, index}` |
 
 ### 性能上的处理
 
