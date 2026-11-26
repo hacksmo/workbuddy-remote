@@ -253,7 +253,7 @@ macOS 网卡名一般是 `en0`，Linux 用 `ip route get 1.1.1.1` 看。
 | 发消息 | `(await wb.conversations.get(id)).sendPrompt(blocks)` |
 | 中断 | `(await wb.conversations.get(id)).cancel()` |
 | 读队列 | `(await wb.conversations.get(id)).queueManager.items()` |
-| 排队操作 | `.queueManager.move(id, idx)` / `.delete(id)` / `.sendNow(id)` |
+| 排队操作 | `.queueManager.move(id, idx)` / `.delete(id)` / `.sendNow(id)`（= 引导，不中断） |
 | 切模型 | `wb.invoke('wb:conversations:configSetModel', id, model)` |
 
 几个踩过的坑，改代码时会碰到：
@@ -273,12 +273,17 @@ macOS 网卡名一般是 `en0`，Linux 用 `ip route get 1.1.1.1` 看。
 
 正确做法是**照样调 `/send`** —— `sendPrompt()` 在生成期间会立即返回（约 60ms），
 由 WorkBuddy 内部串行链排队。网页端只通过 `/queue` 把同一份队列读回来渲染，
-两边共用一份真相，桌面端能看见，网页端也能排序 / 删除 / 立即发送。
+两边共用一份真相，桌面端能看见，网页端也能排序 / 删除 / 引导。
 
 | 操作 | 接口 |
 |---|---|
 | 读队列 | `GET /sessions/:id/queue` → `{items:[{id,seq,blocks}],paused,supported}` |
-| 排序 / 删除 / 立即发 | `POST /sessions/:id/queue` `{op:'move'|'delete'|'sendNow', itemId, index}` |
+| 排序 / 删除 / 引导 | `POST /sessions/:id/queue` `{op:'move'|'delete'|'sendNow', itemId, index}` |
+
+**`sendNow` 是「引导」，不是「打断」** —— 这个名字有迷惑性。实测它不会中断模型，
+而是把这条消息插进**当前正在跑的那一轮**，模型接着往下做。桌面端那个箭头按钮
+（tooltip：「引导会话，消息将被发出但模型不会中断」）调的就是它。引导后不会有新的
+用户消息条目，内容直接出现在当前轮的助手回复里。真要中断得用 `cancel()`。
 
 ### 性能上的处理
 
