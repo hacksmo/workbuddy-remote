@@ -1909,9 +1909,20 @@ function connectTerm(tab) {
   ws.binaryType = 'arraybuffer';
   tab.ws = ws;
   tab.exited = false;
+  // 连上到提示符出来之间有一段空窗：PTY 那侧要 fork 一个登录 shell，
+  // 用户的 .zshrc / .zprofile 里 source 越多这段越长（实测这台机器 4.2s）。
+  // 期间屏幕是纯黑的，看起来像卡住。先写一行灰字占位，
+  // 收到第一个字节就擦掉。
+  tab.term.write('\x1b[2m正在启动 shell…\x1b[0m');
+  tab._wroteWait = true;
 
   ws.onopen = () => {
     tab.alive = true;
+    // 连上了就把退避计数器归零。不归零的话，一天里累计断 7 次（桥重启、
+    // 切网络、休眠唤醒都算）之后这个标签就永久停在「连接失败」——
+    // 哪怕此刻连接完全正常。退避的语义是「连续失败才拉长间隔」，
+    // 成功一次就该重新从 0 开始计。
+    tab._retry = 0;
     setTermState('已连接');
     renderTermTabs();
   };
@@ -1934,6 +1945,12 @@ function connectTerm(tab) {
       return;
     }
     // 二进制 = PTY 原始输出，直接喂给终端
+    // 第一份真实输出到达时，把「正在启动 shell…」那行占位擦掉：
+    // \r 回行首 + \x1b[K 清到行尾，再让 PTY 的字节自己画。
+    if (tab._wroteWait) {
+      tab._wroteWait = false;
+      tab.term.write('\r\x1b[K');
+    }
     tab.term.write(new Uint8Array(ev.data));
   };
 
@@ -1964,11 +1981,15 @@ function closeTermTab(tab) {
   if (!tab) return;
   clearTimeout(tab._timer);
   try { tab.ws && tab.ws.close(); } catch {}
-  // 主动关标签 = 真的结束会话，不是断开连接。否则后台会挂着 shell
-  fetch('/terminal/sessions/' + encodeURIComponent(tab.sid) + '/kill', {
-    method: 'POST',
-    headers: getToken() ? { Authorization: 'Bearer ' + getToken() } : {},
-  }).catch(() => {});
+  // 主动关标签 = 真的结束会话，不是断开连接。否则后台会挂着 shell。
+  // sid 可能还是 null（标签刚建、还没收到 ready 就关了），那种情况后端
+  // 没有可杀的东西，别发一个 /sessions/null/kill 出去制造 404 噪音。
+  if (tab.sid) {
+    fetch('/terminal/sessions/' + encodeURIComponent(tab.sid) + '/kill', {
+      method: 'POST',
+      headers: getToken() ? { Authorization: 'Bearer ' + getToken() } : {},
+    }).catch(() => {});
+  }
   try { tab.term.dispose(); } catch {}
   tab.el.remove();
   const i = termState.tabs.indexOf(tab);
@@ -1983,7 +2004,15 @@ function closeTermTab(tab) {
 }
 
 async function openTerm() {
-  if (termState.open && termState.tabs.length) {
+  // 只要还有标签就直接复用。这里原本只判 `termState.open && tabs.length`，
+  // 于是「点 × 收起 → 再点 >_ 打开」会走完整初始化、又 makeTermTab 建一个
+  // 新标签 —— 实测连点 5 次变成 6 个 xterm 实例挂在同一个 PTY 上，
+  // 内存和事件监听全泄漏，标签条也挤成一排。收起只是隐藏面板，
+  // 标签本来就是留着的，那就直接显示回来。
+  if (termState.tabs.length) {
+    termState.open = true;
+    $('#term').classList.add('open');
+    watchTermResize();
     activateTermTab(termActiveTab() || termState.tabs[0]);
     return;
   }
