@@ -391,7 +391,11 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
   .tr { grid-template-columns: 1fr; padding: 16px 0 }
   .tr > span { padding: 2px 0; font-size: 13px }
   .tr > span:first-child { font-size: 11.5px; color: var(--mu2); letter-spacing: .04em; margin-bottom: 6px }
-  .tr .good::before { width: auto; height: auto; border-radius: 0; background: none }
+  .tr .good::before {
+    width: auto; height: auto;
+    border-radius: 0; background: none;
+    display: inline; margin-right: 0; vertical-align: baseline;
+  }
   .tr > span:nth-child(2)::before { content: "远程桌面 · "; color: var(--mu2) }
   .tr > span:nth-child(3)::before { content: "这个项目 · "; color: var(--mu2) }
   footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px }
@@ -463,26 +467,55 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
 
   .steps { grid-template-columns: 1fr }
 
-  /* 对比表在窄屏改成一格一块：三列并排会把中文挤成竖排单字 */
+  /* 对比表在窄屏改成一行一组：
+       传输内容
+       远程桌面 整屏像素
+       这个项目 结构化内容
+
+     原来给每个格子塞「远程桌面 · 」前缀，真机上伪元素是 inline-block，
+     会和内容拆成两行 —— 变成「这个项目 ·」单独一行，很难看。
+     现在改成真正的两列小网格，标签和值各占一格，永远在同一行。
+     也不用再跟 .good::before 那个 4px 圆点较劲，直接不生成它。 */
   .tr.th { display: none }
   .tr {
-    grid-template-columns: 1fr;
-    padding: 16px 0;
+    grid-template-columns: 4.4em 1fr;
+    padding: 14px 0;
+    row-gap: 3px;
+    align-items: baseline;
   }
-  .tr > span { padding: 2px 0; font-size: 13px }
+  .tr > span { padding: 0; font-size: 13px }
+  /* 第一格是行标题，横跨两列，自己占一行 */
   .tr > span:first-child {
+    grid-column: 1 / -1;
     font-size: 11.5px; color: var(--mu2);
-    letter-spacing: .04em; margin-bottom: 6px;
+    letter-spacing: .04em; margin-bottom: 5px;
   }
-  /* 这里必须把 .good::before 的 width 放回 auto。
-     桌面端那个点是 4px 的空圆圈，靠 width/height 撑出来的；
-     窄屏改成塞「这个项目 · 」四个字，选择器权重更高的这条规则
-     只覆盖了 content，没覆盖 width —— 于是文字被压在 4px 宽的盒子里，
-     一个字一行，整列竖排。这是移动端最难看的一处。 */
+  /* 后两格变成「标签 + 值」，用伪元素当标签，塞进第一列 */
+  .tr > span:nth-child(2),
+  .tr > span:nth-child(3) { display: contents }
+  .tr > span:nth-child(2)::before,
+  .tr > span:nth-child(3)::before {
+    font-size: 11.5px; color: var(--mu2);
+    white-space: nowrap;
+  }
+  .tr > span:nth-child(2)::before { content: "远程桌面" }
+  /* 第三格的标签。
+     必须把桌面端 .tr .good::before 的尺寸和背景一起重置掉。
+     那条规则是 (0,2,0)，比 .tr > span:nth-child(3)::before 的 (0,2,1) 低，
+     所以 content/color 会被这里覆盖，但 width/height/background 不会 ——
+     剩下一个 4px 的蓝色方块当网格第一列，文字从里面溢出来，
+     看上去就是蓝点压在「这」字左上角。只写 content:none 没用，
+     权重不够，压根盖不住（这是绕了两轮的真正原因）。
+     点本身也不画了：标签已经是蓝色，和灰色的「远程桌面」分得开。 */
+  .tr > span:nth-child(3)::before {
+    content: "这个项目";
+    color: #7d9fe0;
+    width: auto; height: auto;
+    border-radius: 0; background: none;
+    margin-right: 0; vertical-align: baseline;
+  }
   .tr .good { color: #c8d6ef }
-  .tr .good::before { width: auto; height: auto; border-radius: 0; background: none; }
-  .tr > span:nth-child(2)::before { content: "远程桌面 · "; color: var(--mu2) }
-  .tr > span:nth-child(3)::before { content: "这个项目 · "; color: var(--mu2) }
+  .tr .good::before { content: none }
 
   footer .wrap { flex-direction: column; align-items: flex-start; gap: 14px }
   .f-right { gap: 18px }
