@@ -100,7 +100,7 @@
   .item .m{font-size:10px;color:var(--muted);margin-top:5px;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
   main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
-  .main-body{flex:1;display:flex;min-height:0}
+  .main-body{flex:1;display:flex;min-height:0;position:relative}
   #preview{width:46%;min-width:320px;display:flex;flex-direction:column;border-left:1px solid var(--line);background:var(--panel);min-height:0}
   #preview.hidden{display:none}
   .pv-bar{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);flex-shrink:0}
@@ -114,6 +114,30 @@
   #model{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;outline:none;max-width:188px}
 
   #msgs{flex:1;overflow:auto;padding:18px 0 6px;min-height:0;scroll-behavior:auto}
+  /* 回到底部：悬浮在消息区右下角，只在用户翻上去时出现。
+     手机上尤其需要 —— 思考块展开后内容能长到几千像素，
+     手指要划很多下才回得到最新消息。 */
+  #toBottom{
+    position:absolute;right:18px;bottom:18px;z-index:6;
+    width:38px;height:38px;border-radius:50%;
+    border:1px solid var(--line);background:var(--panel-2);color:var(--text);
+    display:grid;place-items:center;cursor:pointer;
+    font-size:16px;line-height:1;padding:0;
+    box-shadow:0 3px 12px #0006;
+    opacity:0;transform:translateY(6px) scale(.9);pointer-events:none;
+    transition:opacity .16s ease, transform .16s ease;
+  }
+  #toBottom.on{opacity:1;transform:none;pointer-events:auto}
+  #toBottom:hover{background:var(--hover)}
+  #toBottom .n{
+    position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;
+    border-radius:9px;background:var(--accent);color:#fff;
+    font-size:10px;font-weight:600;line-height:17px;text-align:center;padding:0 4px;
+  }
+  @media (max-width:900px){
+    /* 手机上方块会碰到输入框，抬高点；也稍微缩小省位置 */
+    #toBottom{right:12px;bottom:12px;width:36px;height:36px}
+  }
   #msgs::-webkit-scrollbar{width:10px}
   #msgs::-webkit-scrollbar-thumb{background:var(--hover);border-radius:5px}
   .wrap{max-width:calc(980px / var(--zoom,1));margin:0 auto;padding:0 calc(30px / var(--zoom,1))}
@@ -426,6 +450,7 @@
     </header>
     <div class="main-body">
       <div id="msgs"><div class="empty">WorkBuddy 远程控制台</div></div>
+      <button id="toBottom" title="回到最新消息" aria-label="回到最新消息">↓</button>
       <aside id="preview" class="hidden">
         <div class="pv-bar">
           <input id="pvUrl" placeholder="https://… 或 /preview/本机绝对路径" spellcheck="false" />
@@ -931,6 +956,18 @@ function renderAssistant(ac) {
   return frag;
 }
 
+// 点开思考块后，把展开出来的内容带进视野。
+//
+// 用事件委托挂在 #msgs 上：renderMessages 每次都 `box.textContent=''` 重建
+// 整棵子树，逐个 summary 绑 toggle 监听会在下一次刷新后全部失效。
+// toggle 事件不冒泡，但可以捕获阶段拿到 —— 它是 non-bubbling 但不是
+// non-capturing，所以第三个参数传 true。
+$('#msgs').addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains('think')) return;
+  if (d.open) revealExpanded(d);
+}, true);
+
 // —— 贴底跟随 ——
 // 之前只在渲染「之前」量一次 nearBottom，但 <details open> 展开、图片加载、
 // Markdown 重排都会在渲染「之后」继续改变高度，那时 scrollHeight 还是旧值，
@@ -943,6 +980,51 @@ function atBottom(box) {
 function stickBottom(box) {
   if (SHOT_TOP) return;   // 截图模式：不贴底，停在顶部
   box.scrollTop = box.scrollHeight;
+}
+
+// 回到底部按钮：翻上去才出现。判定用 atBottom()(120px 容差) 而不是严格的
+// scrollTop===scrollHeight，否则刚滚一点点就弹出来，晃眼。
+function syncToBottomBtn() {
+  const box = $('#msgs');
+  const btn = $('#toBottom');
+  if (!box || !btn) return;
+  btn.classList.toggle('on', !atBottom(box));
+}
+$('#toBottom').onclick = () => {
+  const box = $('#msgs');
+  state.stick = true;
+  stickBottom(box);
+  syncToBottomBtn();
+  // 底部可能还有图片在解码、字体在回流，两帧后再补一次，
+  // 免得点了图标却停在离底 200px 的地方（手机上很常见）。
+  requestAnimationFrame(() => stickBottom(box));
+  setTimeout(() => { if (state.stick) stickBottom(box); }, 150);
+};
+
+// 思考块展开后，若展开的内容把下沿顶出了视口，就把它滚进来。
+//
+// 手机上是这个问题：块本身在视野里，点开之后内容往下长，长到屏幕外面
+// 去了，用户看到的只是「下面好像多了东西」，得再划一下才能读。
+//
+// 处理方式刻意**不跳到底部** —— 用户此刻的意图是读这一块，
+// 不是看最新消息。只在真的溢出时补一段最小位移，把块的底部带进视野；
+// 本来就看得见就一动不动。
+function revealExpanded(details) {
+  const box = $('#msgs');
+  if (!box) return;
+  requestAnimationFrame(() => {
+    const r = details.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    // 块底部超出消息区底部多少（>0 才需要动）
+    const overflow = r.bottom - b.bottom;
+    if (overflow <= 0) return;
+    // 只往下滚到「块底部刚好贴着消息区底部」，不多滚。
+    // 留 12px 余量，贴着边不好看也容易误触。
+    box.scrollTop += overflow + 12;
+    // 用户主动展开了内容，说明想看这里，别让随后的新消息把他拽走
+    state.stick = false;
+    syncToBottomBtn();
+  });
 }
 
 function followBottom(box, node) {
@@ -1013,6 +1095,7 @@ function renderMessages(reqs) {
     setTimeout(() => { if (state.stick) stickBottom(box); }, 120);
   }
   followBottom(box, wrap);
+  syncToBottomBtn();
 }
 
 function updateSendBtn() {
@@ -1164,6 +1247,7 @@ async function openSession(id) {
   bottom();
   requestAnimationFrame(bottom);
   setTimeout(bottom, 120);
+  syncToBottomBtn();
 
   try {
     const cfg = await api(`/sessions/${encodeURIComponent(id)}/config`);
@@ -1703,6 +1787,7 @@ mqNarrow.addEventListener('change', syncPlaceholder);
 // 回看历史的用户硬拽到底部。
 $('#msgs').addEventListener('scroll', () => {
   state.stick = atBottom($('#msgs'));
+  syncToBottomBtn();
 }, { passive: true });
 $('#send').onclick = () => {
   // 生成期间：输入框有内容 → 排队；空 → 停止。与按钮文案一致。
