@@ -257,6 +257,10 @@
   .item .del{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:6px;border:1px solid var(--del-line);background:var(--del-bg);color:var(--del-fg);cursor:pointer;opacity:0;font-size:14px;line-height:1;padding:0}
   .item:hover .del{opacity:1}
   .item .del:hover{background:#3a2227;color:#ff9aa2}
+
+  /* focus 截图模式：侧栏只留当前会话，隐藏搜索框和分组计数 */
+  html.focus-mode #q{display:none}
+  html.focus-mode .group{display:none}
 </style>
 </head>
 <body>
@@ -385,6 +389,12 @@ function toast(msg) {
   if (t) localStorage.setItem('wb.token', t);
 })();
 const ONCE = new URLSearchParams(location.search).has('once');  // 截图/打印用：只渲染一次，不轮询
+// 截图/录屏用：只打开指定会话，并隐藏侧栏里其它会话。
+// 真实使用时侧栏是自己的项目名，不适合放进产品截图。
+const FOCUS = new URLSearchParams(location.search).get('focus') || '';
+// 截图用：从对话顶部开始，而不是停在底部。产品图第一屏有用户提问更好懂。
+const SHOT_TOP = new URLSearchParams(location.search).has('top');
+if (FOCUS) document.documentElement.classList.add('focus-mode');
 const getToken = () => localStorage.getItem('wb.token') || '';
 
 async function api(path, opts = {}) {
@@ -461,7 +471,12 @@ function sessionNode(s) {
 
 function renderList() {
   const q = $('#q').value.trim().toLowerCase();
-  const items = state.sessions.filter((s) => !q || (s.title || '').toLowerCase().includes(q));
+  // focus 模式（截图用）不按搜索词过滤，只留目标会话。
+  // 之所以不靠 CSS 隐藏：分组计数写的是「未分组 · 14」，光藏标题
+  // 会留下一个对不上的数字，一眼假。
+  const items = FOCUS
+    ? state.sessions.filter((s) => s.id === FOCUS)
+    : state.sessions.filter((s) => !q || (s.title || '').toLowerCase().includes(q));
   const box = $('#list');
   box.textContent = '';
 
@@ -736,6 +751,7 @@ function atBottom(box) {
 }
 
 function stickBottom(box) {
+  if (SHOT_TOP) return;   // 截图模式：不贴底，停在顶部
   box.scrollTop = box.scrollHeight;
 }
 
@@ -1476,6 +1492,11 @@ $('#input').addEventListener('input', (e) => {
   try {
     await Promise.all([loadSessions(), loadSpaces(), loadModels()]);
     renderList();
+    // focus 模式优先打开指定会话
+    if (FOCUS) {
+      await openSession(FOCUS);
+      return;
+    }
     const first = state.sessions.find((x) => (x.title || '').trim()) || state.sessions[0];
     if (first) openSession(first.id);
     if (localStorage.getItem('wb.previewOpen') === '1') openPreview();
