@@ -75,7 +75,9 @@ workbuddy-remote
 > 启动时会重启一次 WorkBuddy，正在跑的任务会中断 —— 调试端口只能启动时指定，没法热加。
 > 如果你的 WorkBuddy 本来就是带调试端口启动的，会自动跳过重启。
 
-`workbuddy-remote --status` 看运行状态，`--stop` 停掉。
+`workbuddy-remote --status` 随时可以再列出这些地址（忘了二维码/网址时不用翻终端历史）
+和当前运行状态，`--stop` 停掉。注意 `--stop` 会一并关掉开机自启，要恢复重新跑一次
+`./scripts/autostart.sh install`。
 
 ### 三、随便哪台设备，浏览器打开
 
