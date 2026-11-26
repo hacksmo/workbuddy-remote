@@ -142,7 +142,7 @@ func scanLAN(port: Int = 8797, onFound: @escaping (String) -> Void, completion: 
 // MARK: - 应用
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
-                         WKNavigationDelegate, WKScriptMessageHandler {
+                         WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow?
     private var webView: WKWebView?
     private var config: Config?
@@ -190,6 +190,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let wv = WKWebView(frame: .zero, configuration: cfg)
         wv.allowsBackForwardNavigationGestures = true
         wv.navigationDelegate = self
+        // 没有 UIDelegate 时，confirm() / alert() / <input type=file> 全部
+        // 静默失效 —— 前端调 confirm() 会直接拿到 false，删除这类二次确认
+        // 就永远走不下去，表现是「点了没反应」。
+        wv.uiDelegate = self
         webView = wv
 
         let w = NSWindow(
@@ -359,6 +363,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let ns = error as NSError
         if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return }
         webView.loadHTMLString(errorHTML(), baseURL: nil)
+    }
+
+    // MARK: - WKUIDelegate
+    //
+    // WKWebView 默认不弹任何原生对话框。前端调 confirm() 会静默拿到 false，
+    // 于是「删除会话」这类带二次确认的操作看起来是「点了没反应」。
+    // alert/prompt 同理，<input type=file> 也是 —— 都得自己实现。
+    //
+    // 用 JS 在页面内画弹窗也行，但那样每个页面都得改，而且和系统风格不一致。
+    // 这里直接用 NSAlert，暗色模式、键盘响应、按钮顺序都跟系统一致。
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping () -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.addButton(withTitle: "好")
+        attachToWindow(alert)
+        alert.runModal()
+        completionHandler()
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptConfirmPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = message
+        // 顺序很重要：macOS 里第一个按钮是默认按钮（回车触发）。
+        // 删除确认这种破坏性操作，「取消」才该是默认 —— 手快回车不会误删。
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "确定")
+        // 让「取消」看起来是常规样式，蓝色高亮落在「确定」上会诱导误操作。
+        // 破坏性动作系统惯例用红色，这里保持中性即可。
+        attachToWindow(alert)
+        let r = alert.runModal()
+        completionHandler(r == .alertSecondButtonReturn)
+    }
+
+    func webView(_ webView: WKWebView,
+                 runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = prompt
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.stringValue = defaultText ?? ""
+        alert.accessoryView = field
+        alert.addButton(withTitle: "确定")
+        alert.addButton(withTitle: "取消")
+        attachToWindow(alert)
+        alert.window.initialFirstResponder = field
+        let r = alert.runModal()
+        completionHandler(r == .alertFirstButtonReturn ? field.stringValue : nil)
+    }
+
+    /// 让弹窗出现在应用窗口中央，而不是系统乱算的位置。
+    /// 独立 modal 在窗口未定位时会算出屏幕外坐标（踩过，Y=-940）。
+    private func attachToWindow(_ alert: NSAlert) {
+        alert.window.level = .modalPanel
+        if let w = window, w.isVisible {
+            let pf = w.frame
+            let af = alert.window.frame
+            alert.window.setFrameOrigin(NSPoint(x: pf.midX - af.width / 2,
+                                               y: pf.midY - af.height / 2))
+        } else {
+            alert.window.center()
+        }
+    }
+
+    // 文件选择：<input type="file"> 需要这个回调才会真的弹面板
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        panel.canChooseDirectories = parameters.allowsDirectories
+        panel.canChooseFiles = true
+
+        if let w = window, w.isVisible {
+            // sheet 形式：贴在窗口顶部，不会飘到别的屏幕上
+            panel.beginSheetModal(for: w) { r in
+                completionHandler(r == .OK ? panel.urls : nil)
+            }
+        } else {
+            let r = panel.runModal()
+            completionHandler(r == .OK ? panel.urls : nil)
+        }
     }
 }
 

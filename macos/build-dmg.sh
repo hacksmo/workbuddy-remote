@@ -91,6 +91,22 @@ else
   info "没找到 assets/icon*.png，用系统默认图标"
 fi
 
+# ── 本地化 ──────────────────────────────────────────────────────────
+# 不加这个，WKWebView 的右键菜单是英文的（Copy / Look Up / Translate…）。
+#
+# 原因：WebKit 的菜单文案取自 WebCore.framework 里的 zh_CN.lproj，
+# 但选哪个语言取决于**宿主 app** 声明了什么。壳没有 lproj 目录时
+# Bundle.main.localizations 是空数组，preferredLocalizations 回退成
+# ["en"]，WebKit 就只拿英文——系统里明明有完整中文资源。
+info "本地化…"
+for lang in zh-Hans en; do
+  mkdir -p "$APP/Contents/Resources/$lang.lproj"
+  cat >"$APP/Contents/Resources/$lang.lproj/InfoPlist.strings" <<'STRINGS'
+CFBundleName = "WorkBuddy Remote";
+CFBundleDisplayName = "WorkBuddy Remote";
+STRINGS
+done
+
 # ── Info.plist ──────────────────────────────────────────────────────
 cat >"$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -109,6 +125,13 @@ cat >"$APP/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key><true/>
     <key>LSMinimumSystemVersion</key><string>12.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+    <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+        <string>en</string>
+    </array>
 </dict>
 </plist>
 PLIST

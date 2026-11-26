@@ -428,6 +428,17 @@ https://ghproxy.net/${RAW}/main/macos/bin/WorkBuddyRemote"
       rm -rf "$(dirname "$ICONSET")"
     fi
 
+    # 本地化：不加这个 WKWebView 右键菜单是英文的。
+    # 系统里 WebCore.framework 自带完整中文资源，但选哪个语言由宿主 app
+    # 的 CFBundleLocalizations 决定；不声明时 localizations 为空数组，
+    # 直接回退英文。
+    for lang in zh-Hans en; do
+      mkdir -p "$APP/Contents/Resources/$lang.lproj"
+      printf 'CFBundleName = "%s";\nCFBundleDisplayName = "%s";\n' \
+        "${APP_NAME} Remote" "${APP_NAME} Remote" \
+        >"$APP/Contents/Resources/$lang.lproj/InfoPlist.strings"
+    done
+
     cat >"$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -436,8 +447,8 @@ https://ghproxy.net/${RAW}/main/macos/bin/WorkBuddyRemote"
     <key>CFBundleName</key><string>${APP_NAME} Remote</string>
     <key>CFBundleDisplayName</key><string>${APP_NAME} Remote</string>
     <key>CFBundleIdentifier</key><string>com.workbuddy.remote.client</string>
-    <key>CFBundleVersion</key><string>1.3</string>
-    <key>CFBundleShortVersionString</key><string>1.3</string>
+    <key>CFBundleVersion</key><string>1.4</string>
+    <key>CFBundleShortVersionString</key><string>1.4</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleExecutable</key><string>WorkBuddyRemote</string>
     <key>CFBundleIconFile</key><string>app</string>
@@ -445,6 +456,13 @@ https://ghproxy.net/${RAW}/main/macos/bin/WorkBuddyRemote"
     <key>NSHighResolutionCapable</key><true/>
     <key>LSMinimumSystemVersion</key><string>12.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+    <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+        <string>en</string>
+    </array>
 </dict>
 </plist>
 PLIST
