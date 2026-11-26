@@ -252,8 +252,12 @@ async function serve() {
     };
 
     const url = new URL(req.url, 'http://localhost');
-    const isPublic = url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/md.js' || url.pathname === '/health' || url.pathname === '/info' || url.pathname === '/manifest.json' || url.pathname.startsWith('/preview/') || url.pathname.startsWith('/fonts/') || url.pathname.startsWith('/icons/');
+    // 免鉴权白名单只放「拿不到也没损失」的东西：页面骨架、图标字体、健康检查。
+    // /preview/ 必须鉴权 —— 它能读用户主目录下的任意文件，一旦 bridge 监听
+    // 到局域网，免鉴权就等于把整台机器的文档对全 WiFi 开放。
+    const isPublic = url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/md.js' || url.pathname === '/health' || url.pathname === '/info' || url.pathname === '/manifest.json' || url.pathname.startsWith('/fonts/') || url.pathname.startsWith('/icons/');
     if (values.token && !isPublic) {
+      // 图片、iframe 之类没法带 Authorization 头，只能靠 query；两者都接受
       const got = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('token') || '';
       if (got !== values.token) return send(401, { error: 'unauthorized' });
     }
