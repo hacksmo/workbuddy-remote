@@ -47,8 +47,6 @@
       <p class="fine">这条命令装在<b>被控端</b>，也就是装着 WorkBuddy 的那台。另一台什么都不用装。</p>
     </div>
 
-    <!-- 首屏示意图：两台机器之间的连线，这是整个项目的核心，
-         比放一张应用截图更直接说明它是干什么的。 -->
     <div class="diagram" aria-label="示意图：工位那台与另一台电脑之间建立直连">
       <div class="node">
         <div class="win-mini">
@@ -71,21 +69,8 @@
         <em>只有浏览器</em>
       </div>
     </div>
-
-    <p class="diagram-note">左边那个界面，原样出现在右边的浏览器里。</p>
   </div>
 </header>
-
-<section class="facts">
-  <div class="wrap">
-    <ul>
-      <li><b>一行安装</b><p>被控端跑一条命令，直接输出可访问的地址。</p></li>
-      <li><b>零安装</b><p>控制端只要浏览器。不装 WorkBuddy，不装 Node.js。</p></li>
-      <li><b>8.6ms</b><p>同网段自动走近路，比绕公网快 287 倍。</p></li>
-      <li><b>增量推送</b><p>长回答滚动只传新内容，不整段重发。</p></li>
-    </ul>
-  </div>
-</section>
 
 <section id="how" class="sec">
   <div class="wrap">
@@ -107,14 +92,14 @@
         <p>复制「同网段直连」那条地址，粘进浏览器。</p>
       </div>
     </div>
-    <p class="note">两台机器不在一个网络里，用 <code>./scripts/tunnel.sh</code> 走反向 SSH 隧道。</p>
+    <p class="note">不在同一个网络里，用 <code>./scripts/tunnel.sh</code> 走反向 SSH 隧道。</p>
   </div>
 </section>
 
-<section id="ui" class="sec shot-sec">
+<section id="ui" class="sec">
   <div class="wrap">
     <h2>界面</h2>
-    <p class="lead">渲染的就是桌面端的界面。发消息、看思考过程、读长回答，Markdown 和代码块正常显示。会话列表按空间分组，模型切换、中断、粘贴图片、预览面板都在原位。</p>
+    <p class="lead">渲染的就是桌面端的界面。会话列表、模型切换、中断、粘贴图片、预览面板都在原位。</p>
     <div class="shot">
       <a href="shot-app.jpg" target="_blank" rel="noopener">
         <img src="shot-app.jpg" alt="在另一台电脑浏览器里打开的 WorkBuddy 界面" loading="lazy">
@@ -139,33 +124,7 @@
 
 <section class="sec">
   <div class="wrap">
-    <h2>实现上注意的地方</h2>
-    <div class="cards">
-      <div class="card">
-        <h3>队列是同一份</h3>
-        <p>有些远程工具把消息存在浏览器本地，等回复结束再发。那样你排队的消息，坐在那台机器前的人看不到。这里直接走 WorkBuddy 的队列。</p>
-      </div>
-      <div class="card">
-        <h3>反向隧道</h3>
-        <p>公司和运营商通常只拦入站，不拦出站。用从内到外的反向隧道，不用处理 NAT 类型。</p>
-      </div>
-      <div class="card">
-        <h3>默认不裸奔</h3>
-        <p>默认监听局域网，但需要密码。密码自动生成，存本机，权限 600。不想让同网段访问就设 <code>WB_LAN=0</code>。</p>
-      </div>
-      <div class="card">
-        <h3>只要求被控端</h3>
-        <p>需要 macOS 或 Linux 的只有被控端。用来连的那台 Windows、Mac、Linux 都行。</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="sec honest">
-  <div class="wrap">
-    <h2>边界</h2>
-    <p>它依赖桌面端留的调试入口。官方封掉这个入口，或者自己做了桌面版远程，这个项目就没用了。</p>
-    <p>另外官方设置里也有一个叫 <code>WorkBuddy Remote</code> 的插件，那是给手机远程做授权的，走官方云端通道。同名，和这个项目无关。</p>
+    <p class="caveat">它依赖桌面端留的调试入口。官方封掉这个入口、或者自己做了桌面版远程，这个项目就没用了。另外官方设置里也有一个叫 <code>WorkBuddy Remote</code> 的插件，那是给手机远程做授权的，同名但无关。</p>
   </div>
 </section>
 

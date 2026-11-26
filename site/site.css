@@ -271,27 +271,6 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
   font-family: var(--mono); letter-spacing: .02em;
 }
 
-.diagram-note {
-  font-size: 13px; color: var(--mu2);
-  margin-top: 18px; text-align: center;
-}
-
-/* ---------- 事实条 ---------- */
-.facts { padding: 84px 0 0 }
-.facts ul {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  list-style: none;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.facts li { padding: 22px 20px 24px; border-left: 1px solid var(--line) }
-.facts li:first-child { border-left: 0; padding-left: 0 }
-.facts b {
-  display: block; font-size: 12px; font-weight: 500;
-  color: var(--blue); letter-spacing: .04em; margin-bottom: 7px;
-}
-.facts p { font-size: 13.5px; line-height: 1.7; color: var(--mu) }
-
 /* ---------- 通用分节 ---------- */
 .sec { padding: 96px 0 0 }
 .sec > .wrap > h2 {
@@ -367,32 +346,17 @@ nav.top .wrap { height: 62px; display: flex; align-items: center; gap: 26px }
   background: var(--blue); margin-right: 8px; vertical-align: 2px;
 }
 
-/* ---------- 卡片 ---------- */
-.cards {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 16px; margin-top: 34px;
-}
-.card {
-  padding: 24px 22px 26px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--bg2);
-  transition: border-color .25s, background .25s;
-}
-.card:hover { border-color: var(--line2); background: #111419 }
-.card h3 { font-size: 15px; font-weight: 600; margin-bottom: 9px }
-.card p { font-size: 13.5px; line-height: 1.75; color: var(--mu) }
-
-/* 诚实声明：故意用一层很淡的琥珀色边框，和正文区分开，
-   读起来像脚注而不是卖点。 */
-.honest > .wrap {
-  border-left: 2px solid rgba(255, 208, 138, .32);
-  padding-left: 22px;
-}
-.honest h2 { font-size: 19px !important; margin-bottom: 12px !important }
-.honest p {
-  font-size: 13.5px; line-height: 1.8;
-  color: var(--mu); max-width: 680px; margin-bottom: 10px;
+/* 边界说明不单独起一节标题，压成一段小字。
+   它该被读到，但不该在页面上占一个和「安装」「界面」同级的标题。 */
+.caveat {
+  font-size: 13px; line-height: 1.8; color: var(--mu2);
+  max-width: 660px;
+  padding-left: 18px;
+  border-left: 2px solid rgba(255, 255, 255, .09);
+  /* 它夹在对比表和页脚之间。用 .sec 的 96px 上间距会留下一条空洞，
+     因为这段只有三行字、没有标题，视觉上撑不住那么大的空。
+     收紧到 56px，读起来像是表格的注脚，而不是新的一节。 */
+  margin-top: -40px;
 }
 
 /* ---------- footer ---------- */
@@ -422,12 +386,7 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
 @media (max-width: 860px) and (min-width: 501px) {
   .links { display: none }
   .hero { padding-top: 108px }
-  .facts ul { grid-template-columns: 1fr 1fr }
-  .facts li { border-left: 0; padding-left: 0; border-top: 1px solid var(--line) }
-  .facts li:nth-child(-n+2) { border-top: 0 }
-  .facts li:nth-child(even) { padding-left: 18px; border-left: 1px solid var(--line) }
   .steps { grid-template-columns: 1fr }
-  .cards { grid-template-columns: 1fr }
   .tr.th { display: none }
   .tr { grid-template-columns: 1fr; padding: 16px 0 }
   .tr > span { padding: 2px 0; font-size: 13px }
@@ -447,8 +406,6 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
   .cmd .cmd-scroll::after { width: 44px }
   .cta .row { gap: 14px }
   .sec { padding-top: 72px }
-  .facts { padding-top: 60px }
-  .honest > .wrap { padding-left: 16px }
 }
 
 @media (max-width: 500px) {
@@ -504,36 +461,7 @@ footer .wrap { display: flex; align-items: center; gap: 20px }
   .wire-tag b { font-size: 13px }
   .wire-tag em { font-size: 10px }
 
-  /* 窄屏两列时，只给「内容真正铺满」的情况画中间竖线。
-     桌面端靠 border-left + padding-left 撑出间距，但窄屏右列文字短、
-     单元格高度不一致时，那条线会显得贴在左列末尾，读起来像错位。
-     改成用 gap + 伪元素画线，线始终待在两格正中。 */
-  .facts ul {
-    grid-template-columns: 1fr 1fr;
-    column-gap: 22px;
-    /* 用 gap 取代 border 之后，外框的上下线要自己补回来 */
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-  }
-  .facts li {
-    border-left: 0 !important;
-    padding-left: 0 !important;
-    padding-right: 0;
-    border-top: 1px solid var(--line);
-  }
-  .facts li:nth-child(-n+2) { border-top: 0 }
-  /* 右列不再靠自己画左边框，改成整行加一条中线。
-     上下各留 22px 是因为 li 的 padding 就是 22px 上 / 24px 下，
-     让线从文字顶对齐到文字底，不穿过分隔线。 */
-  .facts li:nth-child(even) { position: relative }
-  .facts li:nth-child(even)::before {
-    content: ""; position: absolute;
-    left: -11px; top: 22px; bottom: 24px; width: 1px;
-    background: var(--line);
-  }
-
   .steps { grid-template-columns: 1fr }
-  .cards { grid-template-columns: 1fr }
 
   /* 对比表在窄屏改成一格一块：三列并排会把中文挤成竖排单字 */
   .tr.th { display: none }
