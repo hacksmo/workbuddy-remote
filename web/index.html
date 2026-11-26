@@ -261,6 +261,55 @@
   /* focus 截图模式：侧栏只留当前会话，隐藏搜索框和分组计数 */
   html.focus-mode #q{display:none}
   html.focus-mode .group{display:none}
+
+  /* ── 窄屏 / 手机 ──────────────────────────────────────────────
+     288px 的侧栏在 390px 的屏幕上会吃掉四分之三，主区只剩一条缝。
+     窄屏下把侧栏改成抽屉：绝对定位滑出，点会话自动收回。
+     用 max-width:900px 而不是设备判断——iPad 分屏、浏览器窄窗口同样需要。 */
+  #navBtn{display:none}
+  #scrim{position:fixed;inset:0;background:#000000a8;z-index:39;opacity:0;pointer-events:none;transition:opacity .18s}
+  html.nav-open #scrim{opacity:1;pointer-events:auto}
+
+  @media (max-width:900px){
+    #navBtn{display:grid}
+    /* 选择器必须写 #app>aside：预览面板也用了 <aside>，
+       写成裸 aside 会把预览面板一起推到屏幕外，点开是一片空白。 */
+    #app>aside{position:fixed;top:0;left:0;bottom:0;z-index:40;width:min(86vw,320px);
+          transform:translateX(-101%);transition:transform .2s ease;
+          box-shadow:0 0 40px #000a;padding-top:env(safe-area-inset-top)}
+    html.nav-open #app>aside{transform:none}
+    /* 抽屉里不存在 hover，删除按钮常显，否则手机上永远点不到 */
+    .item .del{opacity:.75}
+    main header{padding:0 10px 0 6px;gap:7px;height:50px;padding-top:env(safe-area-inset-top)}
+    main header .zoom,main header .top-sep{display:none}
+    /* min-width:0 是关键：flex 子项默认 min-width:auto，标题再长也不会收缩，
+       会把右边的模型下拉框顶出屏幕外。 */
+    #title{min-width:0;font-size:13px}
+    #model{max-width:104px;font-size:11px;padding:5px 4px}
+    #msgs{padding:10px 0 4px}
+    .wrap{padding:0 12px}
+    .a{padding:11px 12px;line-height:1.7}
+    .u .bubble{max-width:92%}
+    footer{padding:8px 12px calc(8px + env(safe-area-inset-bottom))}
+    .composer{gap:7px}
+    #pick{height:40px;width:40px;font-size:16px}
+    #input{min-height:40px;font-size:16px;padding:9px 11px}  /* 16px 以下 iOS 会自动放大 */
+    #send{height:40px;padding:0 15px}
+    .hint{font-size:10px;justify-content:flex-start;padding:0 2px}
+    #hintText{display:none}                                  /* 说明文字留给桌面 */
+    /* 预览面板窄屏独占整屏，否则和对话挤在一起两边都不能用 */
+    #preview{position:fixed;inset:0;width:100%;min-width:0;z-index:45;padding-top:env(safe-area-inset-top)}
+    /* 窄屏下长 placeholder 会折成两行、被 textarea 高度切掉半截 */
+    #input::placeholder{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+    /* 表格：width:100% 会把列压到最小宽度，中文被拆成竖排单字。
+       改成按内容撑开、横向滚动，宁可划一下也比一个字一行好读。 */
+    .md-table table{width:max-content;min-width:100%}
+    .md-table th,.md-table td{padding:7px 10px;font-size:12px}
+    .md-table{margin:8px -12px;border-radius:0;border-left:none;border-right:none}
+    /* 滚动条常显，否则用户不知道右边还有列 */
+    .md-table::-webkit-scrollbar{height:4px}
+    .md-table::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:2px}
+  }
 </style>
 </head>
 <body>
@@ -276,8 +325,10 @@
     <input id="q" placeholder="搜索会话" autocomplete="off" />
     <div id="list"></div>
   </aside>
+  <div id="scrim"></div>
   <main>
     <header>
+      <button class="icon-btn" id="navBtn" title="会话列表">☰</button>
       <div id="title">选择左侧会话</div>
       <label class="switch" title="始终展开思考过程">
         <input type="checkbox" id="showThink" />
@@ -937,6 +988,8 @@ async function pollMessages(full) {
 
 async function openSession(id) {
   const s = state.sessions.find((x) => x.id === id);
+  // 窄屏下侧栏是抽屉，点完会话要收回去，否则挡住刚打开的对话
+  document.documentElement.classList.remove('nav-open');
   state.current = s || { id };
   state.lastSig = '';
   state.messages = [];
@@ -1457,6 +1510,25 @@ $('#new').onclick = createSession;
 $('#refresh').onclick = () => loadSessions().catch((e) => toast(e.message));
 $('#q').oninput = renderList;
 
+// ── 窄屏抽屉 ──────────────────────────────────────────────────
+// 侧栏在窄屏是固定的覆盖层，不加收起按钮就没有回路。
+const closeNav = () => document.documentElement.classList.remove('nav-open');
+$('#navBtn').onclick = () => document.documentElement.classList.add('nav-open');
+$('#scrim').onclick = closeNav;
+$('#new').addEventListener('click', closeNav);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
+
+// 输入框提示在窄屏放不下，换成短的。原文案对新用户有说明作用，
+// 所以只在窄屏替换，不改桌面端。
+const PH_LONG = $('#input').placeholder;
+const PH_SHORT = '输入消息…';
+const mqNarrow = window.matchMedia('(max-width:900px)');
+const syncPlaceholder = () => {
+  $('#input').placeholder = mqNarrow.matches ? PH_SHORT : PH_LONG;
+};
+syncPlaceholder();
+mqNarrow.addEventListener('change', syncPlaceholder);
+
 // 用户往上翻就停止跟随，翻回底部则恢复。这样新内容到达时不会把正在
 // 回看历史的用户硬拽到底部。
 $('#msgs').addEventListener('scroll', () => {
@@ -1499,7 +1571,9 @@ $('#input').addEventListener('input', (e) => {
     }
     const first = state.sessions.find((x) => (x.title || '').trim()) || state.sessions[0];
     if (first) openSession(first.id);
-    if (localStorage.getItem('wb.previewOpen') === '1') openPreview();
+    // 恢复上次的预览面板。窄屏不恢复：手机上一开就是全屏预览，
+    // 用户以为页面坏了，而且很难退回去（要先找到那个 × ）。
+    if (localStorage.getItem('wb.previewOpen') === '1' && !mqNarrow.matches) openPreview();
   } catch (e) {
     toast('连接失败：' + e.message + '（如果走代理，请把 100.64.0.0/10 加入代理例外）');
   }
