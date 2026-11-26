@@ -325,7 +325,7 @@ rm -f ~/.local/bin/workbuddy ~/.config/workbuddy-remote/lan-endpoint
 
 <div align="center">
 
-<img src="assets/avatar.jpg" width="64" style="border-radius:50%" alt="shuimo"><br>
+<img src="assets/avatar-round.png" width="72" alt="shuimo"><br>
 
 **shuimo** · [@hacksmo](https://github.com/hacksmo)
 
